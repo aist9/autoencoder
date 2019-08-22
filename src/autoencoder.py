@@ -234,9 +234,9 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
         save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
         act_enc = fe
         act_dec = fd
-        if hasattr(fe,'__iter__'):
+        if type(fe) == type([]):
             act_enc = fe[i]
-        if hasattr(fd,'__iter__'):
+        if type(fd) == type([]):
             act_dec = fd[i]
 
         # 学習を行いsaveする
