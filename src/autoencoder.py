@@ -19,31 +19,36 @@ class Autoencoder(Chain):
         with self.init_scope():
             self.le = L.Linear(inputs, hidden)
             self.ld = L.Linear(hidden, inputs)
-        
+
+        # 活性化関数の指定
         self.fe = fe
         self.fd = fd
 
-    # 順伝播と誤差の計算
-    # tがNoneでなければlossを返す
-    def __call__(self, x):
+    # Forward
+    # hidden_out=Trueにすると隠れ層出力もreturn
+    def __call__(self, x, hidden_out=False):
         h = self.encoder(x)
         y = self.decoder(h)
-        return y
+        if hidden_out == False:
+            return y
+        else:
+            return y, h
 
-    # encode
+    # Encoder
     def encoder(self, x):
         h = self.le(x)
         if self.fe is not None:
             h = self.activation_function(h, self.fe)
         return h
         
-    # decode
+    # Decode
     def decoder(self, h):
         y = self.ld(h)
         if self.fd is not None:
             y = self.activation_function(y, self.fd) 
         return y
     
+    # 活性化関数
     def activation_function(self, data, func): 
         if func == 'tanh':
             data = F.tanh(data)
@@ -55,15 +60,40 @@ class Autoencoder(Chain):
 
 # trainer使うためのラッパー
 class AutoencoderTrainer(Chain):
-    def __init__(self, predictor):
-        super(Regressor, self).__init__(ae=ae)
+    def __init__(self, ae, ae_method=None, rho=0.05, s=0.001):
+        super(AutoencoderTrainer, self).__init__(ae=ae)
 
+        # AEの種類を指定
+        self.ae_method = ae_method
+
+        # Sparse AEの平均活性化度と正則化の強さ
+        self.rho = rho
+        self.s = s
+
+    # trainerで呼ばれるcall関数
     def __call__(self, x, t):
-        y = self.ae(x)
-        loss = F.mean_squared_error(y, t)
+        # Forward
+        if self.ae_method == 'sparse':
+            # sparsei AEの場合は隠れ層出力を受け取りKLDを計算する
+            y, h = self.ae(x, hidden_out=True)
+            kld = self.reg_sparse(h)
+            loss = F.mean_squared_error(y, t) + self.s * kld
+        else:
+            y = self.ae(x)
+            loss = F.mean_squared_error(y, t)
+        
+        # Chainerのreport機能
         reporter.report({'loss': loss}, self)
 
         return loss
+
+    # Sparse正則化項の計算
+    def reg_sparse(self, h):
+        rho_hat = F.sum(h, axis=0) / h.shape[0]
+        kld = F.sum(self.rho * F.log(self.rho / rho_hat) + \
+                    (1 - self.rho) * F.log((1 - self.rho) / (1 - rho_hat)))
+        return kld
+
 
 # 再構成と再構成誤差の計算
 class Reconst():
@@ -118,7 +148,8 @@ class Reconst():
 
 # オーエンコーダの学習(trainer)
 def train_ae_(data, hidden, max_epoch, batchsize, \
-             fe='sigmoid', fd='sigmoid', gpu_device=-1):
+             fe='sigmoid', fd='sigmoid', gpu_device=-1, \
+             ae_method=None, rho=0.05, s=0.001):
     
     # 入力サイズ
     inputs = data.shape[1]
@@ -127,7 +158,7 @@ def train_ae_(data, hidden, max_epoch, batchsize, \
 
     # モデルの定義
     ae = Autoencoder(inputs, hidden, fe=fe, fd=fd)
-    model = AutoencoderTrainer(ae)
+    model = AutoencoderTrainer(ae, ae_method=ae_method, rho=rho, s=s)
     opt = optimizers.Adam()
     opt.setup(model)
 
@@ -148,56 +179,14 @@ def train_ae_(data, hidden, max_epoch, batchsize, \
 
     return ae
 
-# # オーエンコーダの学習
-# def train_ae(data, inputs, hidden, epoch, batchSize, \
-#              fe='sigmoid', fd='sigmoid', gpu_use=True, gpu_device=0):
-#    
-#     model = Autoencoder(inputs, hidden, fe=fe, fd=fd)
-#     opt = optimizers.Adam()
-#     opt.setup(model)
-#
-#     if gpu_use == True:
-#         # from chainer import cuda
-#         # model.to_gpu(gpu_device)
-#         import cupy
-#         model.to_gpu(gpu_device)
-#
-#     len_train = data.shape[0]
-#    
-#     for loop in range(epoch):
-#         perm = np.random.permutation(len_train)
-#
-#         for k in range(0, len_train, batchSize):
-#             d = data[perm[k:k + batchSize], :]
-#             if gpu_use == True:
-#                 x = Variable(cupy.asarray(d))
-#             else:
-#                 x = Variable(d)
-#            
-#             # 逆伝播を計算し更新する
-#             y, loss = model(x)
-#             model.cleargrads()
-#             loss.backward()
-#             opt.update()
-#
-#         # 100エポックに一回現在の状態を表示
-#         if (loop + 1) % 100 == 0:
-#             print('\repoch ' + str(loop + 1) + ': ' + str(loss.data) + ' ', end = '')
-#     print()
-#
-#     if gpu_use == True:
-#         model.to_cpu()
-#
-#     return model
-#
-
 # Stacked AutoEncoderの学習
-#     ちなみにStackedである必要はない
+#     stackedでなくても学習してくれる
 #     folderで指定した場所に各層の学習モデルを保存してくれる
 #     train_modeがFalseのときはfolderからモデルを読み込み
 def train_stacked(train, hidden, epoch, batchsize, folder, \
                   train_mode=True, \
-                  fe='sigmoid', fd='sigmoid'):
+                  fe='sigmoid', fd='sigmoid', \
+                  ae_method=None, rho=[0.05], s=[0.001]):
  
     inputs = train.shape[1]
     layer  = [inputs] + hidden
@@ -227,7 +216,10 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
         if train_mode == True or not os.path.isfile(save_name):
             # 学習を行い、リストにappendしていく
             print("Layer ", i + 1)
-            model_sub = train_ae(feat, l_i, l_o, epoch, batchsize, fe=fe, fd=fd)
+            rho_ = rho[i]
+            s_ = s[i]
+            model_sub = train_ae(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
+                                 ae_method=ae_method, rho=rho_, s=s_)
             model.append(model_sub)
             feat = model_sub.encoder(Variable(feat)).data
 
