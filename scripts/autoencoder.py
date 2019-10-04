@@ -12,7 +12,7 @@ from chainer import training
 from chainer import reporter
 from chainer.training import extensions
 
-# オートエンコーダクラス
+# autoencoder class
 class Autoencoder(Chain):
     def __init__(self, inputs, hidden, fe='sigmoid', fd='sigmoid'):
         super(Autoencoder, self).__init__()
@@ -41,7 +41,7 @@ class Autoencoder(Chain):
             h = self.activation_function(h, self.fe)
         return h
         
-    # Decode
+    # Decoder
     def decoder(self, h):
         y = self.ld(h)
         if self.fd is not None:
@@ -55,19 +55,15 @@ class Autoencoder(Chain):
         elif func == 'sigmoid':
             data = F.sigmoid(data)
         elif func == 'relu':
-<<<<<<< HEAD
-            data = F.sigmoid(data)
-=======
             data = F.relu(data)
->>>>>>> bf10c9cd44e7062549f392c4c201cf1a05269678
         return data
 
-# trainer使うためのラッパー
+# trainerを使うためのラッパー
 class AutoencoderTrainer(Chain):
     def __init__(self, ae, ae_method=None, rho=0.05, s=0.001):
         super(AutoencoderTrainer, self).__init__(ae=ae)
 
-        # AEの種類を指定
+        # AEの種類を指定、今後増やすかも
         self.ae_method = ae_method
 
         # Sparse AEの平均活性化度と正則化の強さ
@@ -98,17 +94,16 @@ class AutoencoderTrainer(Chain):
                     (1 - self.rho) * F.log((1 - self.rho) / (1 - rho_hat)))
         return kld
 
-
 # 再構成と再構成誤差の計算
 class Reconst():
     # 学習、モデルを渡しておく
     def __init__(self, model):
         
-        # if type(model) != 'list':
-            # model = [model]
-
         self.model = model
-        self.L = len(model)
+        if not isinstance(model, list):
+            self.model = [model]
+
+        self.L = len(self.model)
     
     # 再構成と再構成誤差一括で計算
     def __call__(self, data):
@@ -150,9 +145,9 @@ class Reconst():
         result = [True if err[i] <= th else False for i in range(len(err))]
         return result
 
-# オーエンコーダの学習(trainer)
-def train_ae_(data, hidden, max_epoch, batchsize, \
-             fe='sigmoid', fd='sigmoid', gpu_device=-1, \
+# trainerによるオーエンコーダの学習
+def autoencoder_trainer(data, hidden, max_epoch, batchsize, \
+             fe='sigmoid', fd='sigmoid', gpu_device=0, \
              ae_method=None, rho=0.05, s=0.001):
     
     # 入力サイズ
@@ -183,6 +178,7 @@ def train_ae_(data, hidden, max_epoch, batchsize, \
 
     return ae
 
+# 最後に全層を結合して再学習する
 def train_all(data, models, epoch, batchSize, \
              gpu_use=True, gpu_device=0):
     
@@ -230,20 +226,18 @@ def train_all(data, models, epoch, batchSize, \
 
     return models
 
-
-
 # Stacked AutoEncoderの学習
-#     stackedでなくても学習してくれる
+#     リスト管理で学習
 #     folderで指定した場所に各層の学習モデルを保存してくれる
 #     train_modeがFalseのときはfolderからモデルを読み込み
 def train_stacked(train, hidden, epoch, batchsize, folder, \
                   train_mode=True, \
                   fe='sigmoid', fd='sigmoid', \
-                  ae_method=None, rho=[0.05], s=[0.001]):
+                  ae_method=None, rho=0.05, s=0.001,
+                 ):
  
     inputs = train.shape[1]
     layer  = [inputs] + hidden
-    # layer.extend(hidden)
     
     # 隠れ層の数値を文字列にして保存・読み込みのフォルダを分ける
     hidden_str = []
@@ -264,26 +258,29 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
         hidden_num = str(l_i) + '_' + str(l_o)
         # モデルの保存名
         save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
+
+        # 各パラメータを設定
+        # リスト形式の場合は配列から読み取るようにする
         act_enc = fe
         act_dec = fd
+        rho_ = rho
+        s_ = s
         if type(fe) == type([]):
             act_enc = fe[i]
         if type(fd) == type([]):
             act_dec = fd[i]
+        if type(rho) == type([]):
+            rho_ = rho[i]
+        if type(s) == type([]):
+            s = s[i]
 
         # 学習を行いsaveする
         if train_mode == True or not os.path.isfile(save_name):
             # 学習を行い、リストにappendしていく
             print("Layer ", i + 1)
-<<<<<<< HEAD
-            rho_ = rho[i]
-            s_ = s[i]
-            model_sub = train_ae(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
+            model_sub = autoencoder_trainer(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
                                  ae_method=ae_method, rho=rho_, s=s_)
-=======
-            model_sub = train_ae(feat, l_i, l_o, epoch, batchsize, fe=act_enc, fd=act_dec)
->>>>>>> bf10c9cd44e7062549f392c4c201cf1a05269678
-            model.append(model_sub)
+            models.append(model_sub)
             feat = model_sub.encoder(Variable(feat)).data
 
             # モデルの保存
@@ -303,7 +300,6 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
             hidden_num = str(l_i) + '_' + str(l_o)
             save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
             chainer.serializers.save_npz(save_name, model[i])
-
 
     return model
 

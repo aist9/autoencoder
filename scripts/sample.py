@@ -7,7 +7,7 @@ import chainer
 from chainer import serializers
 # autoencoder.py
 import autoencoder
-from autoencoder import train_ae_, Reconst, Autoencoder
+from autoencoder import autoencoder_trainer, Reconst, Autoencoder
 
 # MNISTを使用して特定の手書き数字データを学習するAutoEncoder
 if __name__ == '__main__':
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode:
         # 学習＋モデルの保存
-        model = train_ae_(train_data, hidden, epoch, batchsize)
+        model = autoencoder_trainer(train_data, hidden, epoch, batchsize)
         serializers.save_npz(save_model_name, model)
 
     # 保存したモデルから読み込み
@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
     # 再構成を行う
     # AutoEncoderの再構成を行うクラスを定義
-    ar = Reconst([model])
+    ar = Reconst(model)
     feat_train, reconst_train, err_train = ar(train_data)
     feat_test,  reconst_test,  err_test  = ar(test_data)
 
