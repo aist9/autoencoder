@@ -55,7 +55,11 @@ class Autoencoder(Chain):
         elif func == 'sigmoid':
             data = F.sigmoid(data)
         elif func == 'relu':
+<<<<<<< HEAD
             data = F.sigmoid(data)
+=======
+            data = F.relu(data)
+>>>>>>> bf10c9cd44e7062549f392c4c201cf1a05269678
         return data
 
 # trainer使うためのラッパー
@@ -141,9 +145,9 @@ class Reconst():
         th = mn + sigma * std
         return mn, std, th
     
-    # しきい値を超えた場合はTrue
+    # しきい値を超えた場合はFalse
     def judgment(self, err, th):
-        result = [False if err[i] <= th else True for i in range(len(err))]
+        result = [True if err[i] <= th else False for i in range(len(err))]
         return result
 
 # オーエンコーダの学習(trainer)
@@ -179,6 +183,55 @@ def train_ae_(data, hidden, max_epoch, batchsize, \
 
     return ae
 
+def train_all(data, models, epoch, batchSize, \
+             gpu_use=True, gpu_device=0):
+    
+    if gpu_use == True:
+        import cupy
+        opts = []
+        for model in models:
+            model.to_gpu(gpu_device)
+            opt = optimizers.Adam()
+            opt.setup(model)
+            opts.append(opt)
+
+    len_train = data.shape[0]
+    for loop in range(epoch):
+        perm = np.random.permutation(len_train)
+
+        for k in range(0, len_train, batchSize):
+            d = data[perm[k:k + batchSize], :]
+            if gpu_use == True:
+                x = Variable(cupy.asarray(d))
+            else:
+                x = Variable(d)
+            
+            # 逆伝播を計算し更新する
+            y = x
+            Y = []
+            for model in models:
+                model.cleargrads()
+                y = model.encoder(y)
+            for model in models[::-1]:
+                y = model.decoder(y)
+            loss = models[0].calc_loss(y,x)
+            loss.backward()
+            for opt in opts:
+                opt.update()
+
+        # 100エポックに一回現在の状態を表示
+        if (loop + 1) % 100 == 0:
+            print('\repoch ' + str(loop + 1) + ': ' + str(loss.data) + ' ', end = '')
+    print()
+
+    if gpu_use == True:
+        for model in models:
+            model.to_cpu()
+
+    return models
+
+
+
 # Stacked AutoEncoderの学習
 #     stackedでなくても学習してくれる
 #     folderで指定した場所に各層の学習モデルを保存してくれる
@@ -205,21 +258,31 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
 
     # 隠れ層分だけloop
     model = []
-    feat = train
+    feat = train.copy()
     for i,(l_i, l_o) in enumerate(zip(layer[0:-1], layer[1:])):
         # 保存に使う文字列
         hidden_num = str(l_i) + '_' + str(l_o)
         # モデルの保存名
         save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
+        act_enc = fe
+        act_dec = fd
+        if type(fe) == type([]):
+            act_enc = fe[i]
+        if type(fd) == type([]):
+            act_dec = fd[i]
 
         # 学習を行いsaveする
         if train_mode == True or not os.path.isfile(save_name):
             # 学習を行い、リストにappendしていく
             print("Layer ", i + 1)
+<<<<<<< HEAD
             rho_ = rho[i]
             s_ = s[i]
             model_sub = train_ae(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
                                  ae_method=ae_method, rho=rho_, s=s_)
+=======
+            model_sub = train_ae(feat, l_i, l_o, epoch, batchsize, fe=act_enc, fd=act_dec)
+>>>>>>> bf10c9cd44e7062549f392c4c201cf1a05269678
             model.append(model_sub)
             feat = model_sub.encoder(Variable(feat)).data
 
@@ -228,9 +291,19 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
 
         # 学習しない場合はloadする
         else:
-            model_sub = Autoencoder(l_i, l_o, fe=fe, fd=fd)
+            model_sub = Autoencoder(l_i, l_o, fe=act_enc, fd=act_dec)
             chainer.serializers.load_npz(save_name, model_sub)
             model.append(model_sub)
+
+    # 最後に全モデルを通して学習し直す
+    if train_mode and len(model)>1:
+        print("Layer all")
+        model = train_all(train, model, epoch, batchsize)
+        for i,(l_i, l_o) in enumerate(zip(layer[0:-1], layer[1:])):
+            hidden_num = str(l_i) + '_' + str(l_o)
+            save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
+            chainer.serializers.save_npz(save_name, model[i])
+
 
     return model
 
