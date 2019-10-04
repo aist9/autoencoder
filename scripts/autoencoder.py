@@ -146,7 +146,7 @@ class Reconst():
         return result
 
 # trainerによるオーエンコーダの学習
-def autoencoder_trainer(data, hidden, max_epoch, batchsize, \
+def training_autoencoder(data, hidden, max_epoch, batchsize, \
              fe='sigmoid', fd='sigmoid', gpu_device=0, \
              ae_method=None, rho=0.05, s=0.001):
     
@@ -278,7 +278,7 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
         if train_mode == True or not os.path.isfile(save_name):
             # 学習を行い、リストにappendしていく
             print("Layer ", i + 1)
-            model_sub = autoencoder_trainer(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
+            model_sub = training_autoencoder(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
                                  ae_method=ae_method, rho=rho_, s=s_)
             models.append(model_sub)
             feat = model_sub.encoder(Variable(feat)).data
