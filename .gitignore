@@ -1,3 +1,5 @@
 .DS_Store
 output
-src/__pycache__
+__pycache__
+*pyc
+result
