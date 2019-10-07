@@ -76,8 +76,10 @@ class AutoencoderTrainer(Chain):
         if self.ae_method == 'sparse':
             # sparsei AEの場合は隠れ層出力を受け取りKLDを計算する
             y, h = self.ae(x, hidden_out=True)
-            kld = self.reg_sparse(h)
-            loss = F.mean_squared_error(y, t) + self.s * kld
+            loss = F.mean_squared_error(y, t)
+            if 0 < self.s:
+                kld = self.reg_sparse(h)
+                loss += self.s * kld
         else:
             y = self.ae(x)
             loss = F.mean_squared_error(y, t)
@@ -273,15 +275,15 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
         if type(rho) == type([]):
             rho_ = rho[i]
         if type(s) == type([]):
-            s = s[i]
+            s_ = s[i]
 
         # 学習を行いsaveする
         if train_mode == True or not os.path.isfile(save_name):
             # 学習を行い、リストにappendしていく
             print("Layer ", i + 1)
-            model_sub = training_autoencoder(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
+            model_sub = training_autoencoder(feat, l_o, epoch, batchsize, fe=act_enc, fd=act_dec,\
                                  ae_method=ae_method, rho=rho_, s=s_)
-            models.append(model_sub)
+            model.append(model_sub)
             feat = model_sub.encoder(Variable(feat)).data
 
             # モデルの保存
