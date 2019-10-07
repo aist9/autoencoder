@@ -234,7 +234,8 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
                   train_mode=True, \
                   fe='sigmoid', fd='sigmoid', \
                   ae_method=None, rho=0.05, s=0.001,
-                 ):
+                  fine_tune=False
+                ):
  
     inputs = train.shape[1]
     layer  = [inputs] + hidden
@@ -293,7 +294,7 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
             model.append(model_sub)
 
     # 最後に全モデルを通して学習し直す
-    if train_mode and len(model)>1:
+    if fine_tune and train_mode and len(model)>1:
         print("Layer all")
         model = train_all(train, model, epoch, batchsize)
         for i,(l_i, l_o) in enumerate(zip(layer[0:-1], layer[1:])):
