@@ -39,81 +39,51 @@ class Xavier(initializer.Initializer):
 class VAE(chainer.Chain):
     """Variational AutoEncoder"""
 
-    def __init__(self, layers, act_func=F.tanh):
+    def __init__(self, inputs, hidden, act_func=F.tanh):
         super(VAE, self).__init__()
         self.act_func = act_func
-        self.prop_num = len(layers)-1
+        with self.init_scope():
+            # encoder
+            self.le        = L.Linear(inputs, hidden,      initialW=Xavier(inputs, hidden))
+            self.le_var    = L.Linear(inputs, hidden,      initialW=Xavier(inputs, hidden))
+            # self.le3_ln_var = L.Linear(n_h,  n_latent, initialW=Xavier(n_h,  n_latent))
+            # decoder
+            self.ld = L.Linear(hidden, inputs, initialW=Xavier(hidden, inputs))
 
-        self.makeLayers(layers)
-
-
-    def makeLayers(self,hidden):
-        
-        for i in range(len(hidden)-1):
-            l = L.Linear(hidden[i],hidden[i+1], initialW=Xavier(hidden[i], hidden[i+1]))
-            name  = 'a_enc{}'.format(i)
-            self.add_link(name,l)
-
-            j = len(hidden)-i-1
-            l = L.Linear(hidden[j],hidden[j-1], initialW=Xavier(hidden[i], hidden[i+1]))
-            name  = 'b_dec{}'.format(i)
-            self.add_link(name,l)
-
-        l = L.Linear(hidden[i],hidden[i+1], initialW=Xavier(hidden[i], hidden[i+1]))
-        name  = 'a_enc{}_var'.format(i)
-        self.add_link(name,l)
-
-        
     def __call__(self, x, sigmoid=True):
         """ AutoEncoder """
-        e,var = self.encode(x)
+        e = self.encode(x)
         d = self.decode(e,sigmoid)
-        return e,d
-
-
-    def encode(self, x):
-        
-        e = x
-
-        for i,layer in enumerate(self.children()):
-            # print(layer.name)
-            if i == self.prop_num-1:
-                mu = layer(e)
-                continue
-            if i == self.prop_num:
-                var = layer(e)
-                break
-            e = self.act_func(layer(e))
-
-        return mu,var
-
-    def decode(self, z, sigmoid=True):
-
-        # sigmoid = True
-        d = z
-
-        for i,layer in enumerate(self.children()):
-            if i > self.prop_num:
-                d = layer(d)
-                if i < self.prop_num * 2:
-                    d = self.act_func(d)
-                    # print(layer.name)
-
-        if sigmoid:
-            d = F.sigmoid(d)
-
         return d
 
+
+    def encode(self, x,isBottom=False):
+        h1 = self.le(x)
+        if isBottom:
+            return h1, self.le_var(x)
+        return self.act_func(h1)
+
+    def decode(self, z,isTop=False, sigmoid=False):
+        h1 = self.ld(z)
+        if sigmoid and isTop:
+            return F.sigmoid(h1)
+        elif isTop:
+            return h1
+        else:
+            return self.act_func(h1)
 
 
 
 # 再構成と再構成誤差の計算
 class Reconst():
     # 学習、モデルを渡しておく
-    def __init__(self, model,sig=False):
+    def __init__(self, model):
         
+        # if type(model) != 'list':
+            # model = [model]
+
         self.model = model
-        self.sig = sig
+        self.L = len(model)
     
     # 再構成と再構成誤差一括で計算
     def __call__(self, data):
@@ -129,18 +99,24 @@ class Reconst():
     # 入力データを再構成
     def data2reconst(self, data):
         feat = Variable(data)
-        mu,var = self.model.encode(feat)
+        for i in range(self.L-1):
+            feat = self.model[i].encode(feat)
+        mu,var = self.model[-1].encode(feat,isBottom=True)
         feat = F.gaussian(mu, var)
         
         reconst = feat
-        reconst = self.model.decode(reconst,sigmoid=self.sig)
+        for i in range(self.L-1):
+            reconst = self.model[self.L - i - 1].decode(reconst)
+        reconst = self.model[0].decode(reconst,isTop=True)
 
         return feat.data, reconst.data
 
     def decode(self,data):
         reconst = Variable(data)
-        reconst = self.model.decode(reconst,sigmoid=self.sig)
-        # reconst = self.model.decode(reconst,sigmoid=True)
+        for i in range(self.L-1):
+            reconst = self.model[self.L - i - 1].decode(reconst)
+        #reconst = self.model[0].decode(reconst,isTop=True)
+        reconst = self.model[0].decode(reconst,isTop=True,sigmoid=False)
 
         return reconst
 
@@ -164,11 +140,14 @@ class Reconst():
         return result
 
 
-def train_vae(model,train,epoch,batch,C=1.0,k=1,use_sigmoid=False):
+def train_vae(models,train,epoch,batch,C=1.0,k=1):
 
-    model.to_gpu(0)
-    opt = optimizers.Adam()
-    opt.setup(model)
+    opts=[]
+    for model in models:
+        model.to_gpu(0)
+        opt = optimizers.Adam()
+        opt.setup(model)
+        opts.append(opt)
 
     # あらかじめgpuに投げつつVariable化する
     nlen = train.shape[0]
@@ -182,8 +161,12 @@ def train_vae(model,train,epoch,batch,C=1.0,k=1,use_sigmoid=False):
 
             # エンコード
             enc = d
-            model.cleargrads()
-            mu, ln_var = model.encode(enc)
+            for model in models[:-1]:
+                model.cleargrads()
+                enc = model.encode(enc)
+            # ボトルネック層は2出力らしいので最後のエンコードのみ別処理
+            models[-1].cleargrads()
+            mu, ln_var = models[-1].encode(enc,isBottom=True)
 
             rec_loss = 0
             for l in range(k): #普通は k=1
@@ -191,36 +174,38 @@ def train_vae(model,train,epoch,batch,C=1.0,k=1,use_sigmoid=False):
 
                 # デコード
                 dec = z
-                dec = model.decode(dec, sigmoid=use_sigmoid)
+                for model in models[:0:-1]:
+                    dec = model.decode(dec)
+                #最終層は活性化なし
+                dec = models[0].decode(dec, isTop=True, sigmoid=False)
 
                 rec_loss += F.bernoulli_nll(d,dec) / (k * batch)
-                # rec_loss += F.mean_squared_error(d,dec) / (k)
 
             latent_loss = C * gaussian_kl_divergence(mu, ln_var) / batch
             loss = rec_loss + latent_loss
 
             # 逆伝搬
             loss.backward()
-            opt.update()
+            # 各層は別々のモデルなので、各層にupdate処理。なんかいい方法ないかな
+            for opt in opts:
+                opt.update()
 
         if (ep + 1) % 10 == 0:
-            # print('\repoch ' + str(ep + 1) + ': ' + str(loss.data) + ' ', end = '')
-            print('\repoch ' + str(ep + 1) + ': ' + str(loss.data) + ' ',latent_loss,rec_loss ,end = '\n')
-            # print(model.a_enc0.W[0,0],model.a_enc1.W[0,0],model.a_enc2.W[0,0])
-            # print(model.b_dec0.W[0,0],model.b_dec1.W[0,0],model.b_dec2.W[0,0])
+            #print('\repoch ' + str(ep + 1) + ': ' + str(loss.data) + ' ', end = '')
+            print('\repoch ' + str(ep + 1) + ': ' + str(loss.data) + ' ', latent_loss,rec_loss,end = '\n')
+
     print()
 
-    model.to_cpu()
+    for model in models:
+        model.to_cpu()
 
-    return model
+    return models
 
 def train_stacked(train, hidden, epoch, batchsize, folder, \
                   train_mode=True, \
-                  act=F.tanh,C=1.0,k=1, use_sigmoid=False ):
+                  act=F.tanh):
  
     inputs = train.shape[1]
-    if type(hidden) != type([]):
-        hidden = [hidden]
     layer  = [inputs] + hidden
     # layer.extend(hidden)
     
@@ -239,22 +224,28 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
     # 隠れ層分だけloop
     model = []
     feat = train.copy()
+    for i,(l_i, l_o) in enumerate(zip(layer[0:-1], layer[1:])):
         
-    # 保存に使う文字列
-    hidden_num = ''
-    for i in layer:
-        hidden_num += str(i) + '_'
-    # モデルの保存名
-    save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
-    if train_mode:
-        model = VAE(layer, act)
-        model = train_vae(model, train, epoch, batchsize,C=C,k=k,use_sigmoid=use_sigmoid)
-        chainer.serializers.save_npz(save_name, model)
+        # 保存に使う文字列
+        hidden_num = str(l_i) + '_' + str(l_o)
+        # モデルの保存名
+        save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
+        if train_mode:
+            model.append(VAE(l_i, l_o, act))
 
-    # 学習しない場合はloadする
-    else:
-        model = VAE(layer, act)
-        chainer.serializers.load_npz(save_name, model)
+        # 学習しない場合はloadする
+        else:
+            model_sub = VAE(l_i, l_o, act)
+            chainer.serializers.load_npz(save_name, model_sub)
+            model.append(model_sub)
+
+    # 最後に全モデルを通して学習し直す
+    if train_mode and len(model)>1:
+        model = train_vae(model, train, epoch, batchsize)
+        for i,(l_i, l_o) in enumerate(zip(layer[0:-1], layer[1:])):
+            hidden_num = str(l_i) + '_' + str(l_o)
+            save_name = os.path.join(folder_model, 'model_' + hidden_num + '.npz')
+            chainer.serializers.save_npz(save_name, model[i])
 
     return model
 
