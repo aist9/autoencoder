@@ -25,14 +25,20 @@ class Autoencoder(chainer.Chain):
         return y, loss
 
     # 順伝播
+    # def fwd(self, x):
+    #     h = self.encoder(x)
+    #     y = self.decoder(h)
+    #     return y
+
     def fwd(self, x):
-        h = self.encoder(x)
-        y = self.decoder(h)
+        h = F.dropout(self.encoder(x))
+        y = F.dropout(self.decoder(h))
         return y
     
     # 誤差の計算
     def calc_loss(self, x, y):
         loss = F.mean_squared_error(y, x)
+        # loss = F.mean_absolute_error(y, x)
         return loss
 
     # encode
@@ -56,6 +62,8 @@ class Autoencoder(chainer.Chain):
             data = F.sigmoid(data)
         elif func == 'relu':
             data = F.relu(data)
+        elif func == 'leaky':
+            data = F.leaky_relu(data)
         return data
 
 
@@ -125,16 +133,15 @@ def train_ae(data, inputs, hidden, epoch, batchSize, \
         model.to_gpu(gpu_device)
 
     len_train = data.shape[0]
+    if gpu_use == True:
+        data = Variable(cupy.asarray(data))
+    else:
+        data = Variable(data)
     
     for loop in range(epoch):
         perm = np.random.permutation(len_train)
-
         for k in range(0, len_train, batchSize):
-            d = data[perm[k:k + batchSize], :]
-            if gpu_use == True:
-                x = Variable(cupy.asarray(d))
-            else:
-                x = Variable(d)
+            x = data[perm[k:k + batchSize], :]
             
             # 逆伝播を計算し更新する
             y, loss = model(x)
@@ -165,15 +172,15 @@ def train_all(data, models, epoch, batchSize, \
             opts.append(opt)
 
     len_train = data.shape[0]
+    if gpu_use == True:
+        data = Variable(cupy.asarray(data))
+    else:
+        data = Variable(data)
+
     for loop in range(epoch):
         perm = np.random.permutation(len_train)
-
         for k in range(0, len_train, batchSize):
-            d = data[perm[k:k + batchSize], :]
-            if gpu_use == True:
-                x = Variable(cupy.asarray(d))
-            else:
-                x = Variable(d)
+            x = data[perm[k:k + batchSize], :]
             
             # 逆伝播を計算し更新する
             y = x
@@ -198,7 +205,6 @@ def train_all(data, models, epoch, batchSize, \
             model.to_cpu()
 
     return models
-
 
 
 # Stacked AutoEncoderの学習

@@ -63,7 +63,7 @@ class VAE(chainer.Chain):
             return h1, self.le_var(x)
         return self.act_func(h1)
 
-    def decode(self, z,isTop=False, sigmoid=False):
+    def decode(self, z,isTop=False, sigmoid=True):
         h1 = self.ld(z)
         if sigmoid and isTop:
             return F.sigmoid(h1)
@@ -115,8 +115,8 @@ class Reconst():
         reconst = Variable(data)
         for i in range(self.L-1):
             reconst = self.model[self.L - i - 1].decode(reconst)
-        #reconst = self.model[0].decode(reconst,isTop=True)
-        reconst = self.model[0].decode(reconst,isTop=True,sigmoid=False)
+        reconst = self.model[0].decode(reconst,isTop=True)
+        #reconst = self.model[0].decode(reconst,isTop=True,sigmoid=False)
 
         return reconst
 
@@ -177,8 +177,8 @@ def train_vae(models,train,epoch,batch,C=1.0,k=1):
                 for model in models[:0:-1]:
                     dec = model.decode(dec)
                 #最終層は活性化なし
+                #bernoulli_nllがsigmoidを内包しているため,sigmoid=False
                 dec = models[0].decode(dec, isTop=True, sigmoid=False)
-
                 rec_loss += F.bernoulli_nll(d,dec) / (k * batch)
 
             latent_loss = C * gaussian_kl_divergence(mu, ln_var) / batch
