@@ -1,15 +1,16 @@
-# 60-300 100-300 200-300
 
 import os, sys
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
 # Chainer
 import chainer
 from chainer import serializers
+
 # autoencoder.py
 import variational_autoencoder
-from variational_autoencoder import train_stacked, Reconst, VAE
+from variational_autoencoder import VariationalAutoEncoder, Reconst, training_vae
 import cv2
 
 # MNISTを使用して特定の手書き数字データを学習するAutoEncoder
@@ -32,35 +33,28 @@ if __name__ == '__main__':
     # MNISTデータの読み込み
     train, test = chainer.datasets.get_mnist()
     
-    # データとラベルに切り分け(ラベルは不要)
-    # 指定したnumber(ラベル)で抜き取り
-    number = 5
     train_data, train_label = train._datasets
-    #train_data = train_data[train_label == number]
-    train_data = train_data
-
     test_data, test_label = test._datasets
-    #test_data_n  = test_data[test_label == number]
-    #test_label_n = test_label[test_label == number]
-    #test_data  = np.concatenate((test_data_n[0:5],  test_data[0:5]))
-    #test_label = np.concatenate((test_label_n[0:5], test_label[0:5]))
+
     test_data = test_data[:20]
     test_label = test_label[:20]
 
     # 学習の条件
     # エポックとミニバッチサイズ
     epoch = 200
-    batchsize = 32
+    batchsize = 64
     # 隠れ層のユニット数
     hidden = [100,20,2]
 
     fd = './models/'
     # VAEの学習
-    model = train_stacked(train_data, hidden, epoch, batchsize, fd, train_mode, act=chainer.functions.tanh)
+    vae = training_vae(train_data, hidden, epoch, batchsize, \
+             act_func='sigmoid', gpu_device=0, \
+             loss_function='mse')
+ 
 
-    # 再構成を行う
-    # AutoEncoderの再構成を行うクラスを定義
-    ar = Reconst(model)
+    # 再構成
+    ar = Reconst(vae)
     feat_train, reconst_train, err_train = ar(train_data)
     feat_test,  reconst_test,  err_test  = ar(test_data)
 
@@ -77,7 +71,7 @@ if __name__ == '__main__':
     plt.show()
 
 
-    rn = np.arange(-2,2,0.2)
+    rn = np.arange(-3,3,0.3)
     dt = []
     for i in range(20):
         for j in range(20):
@@ -85,7 +79,6 @@ if __name__ == '__main__':
     dt=np.asarray(dt)
 
     rc = ar.decode(dt).data
-    print(type(rc))
     
     fig = plt.figure()
     for i in range(0,400):
@@ -95,5 +88,4 @@ if __name__ == '__main__':
         #cv2.waitKey(1)
     plt.show()
     
-
 
