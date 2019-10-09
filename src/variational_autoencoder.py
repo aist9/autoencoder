@@ -64,7 +64,7 @@ class VAE(chainer.Chain):
 
     def encode(self, x):        
         e = x
-        for i,layer in enumerate(self.children()):
+        for layer in self.children():
             # エンコード層のみ処理
             if 'enc' in layer.name:
                 if 'mu' in layer.name: # μ を出力するレイヤー
@@ -80,7 +80,7 @@ class VAE(chainer.Chain):
 
     def decode(self, z, sigmoid=True):
         d = z
-        for i,layer in enumerate(self.children()):
+        for layer in self.children():
             # デコード層のみ処理
             if 'dec' in layer.name:
                 # 出力層は活性化しない
