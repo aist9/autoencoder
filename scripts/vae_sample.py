@@ -34,51 +34,57 @@ if __name__ == '__main__':
     train, test = chainer.datasets.get_mnist()
     
     train_data, train_label = train._datasets
-    test_data, test_label = test._datasets
-
-    test_data = test_data[:20]
-    test_label = test_label[:20]
+    # test_data, test_label = test._datasets
+    # test_data = test_data[:20]
+    # test_label = test_label[:20]
 
     # 学習の条件
     # エポックとミニバッチサイズ
-    epoch = 200
-    batchsize = 64
+    epoch = 50
+    batchsize = 100 
     # 隠れ層のユニット数
-    hidden = [100,20,2]
+    hidden = [100, 20, 2]
+    # 活性化関数
+    act_func = 'tanh'
 
-    fd = './models/'
+    save_name = '../output/vae_model.npz'
     # VAEの学習
-    vae = training_vae(train_data, hidden, epoch, batchsize, \
-             act_func='sigmoid', gpu_device=0, \
-             loss_function='mse')
- 
+    if train_mode:
+        vae = training_vae(train_data, hidden, epoch, batchsize, \
+                 act_func=act_func, gpu_device=0, \
+                 loss_function='bernoulli')
+        serializers.save_npz(save_name, vae)
+    else:
+        # 保存したモデルから読み込み
+        layers = [train_data.shape[1]] + hidden
+        vae = VariationalAutoEncoder(layers, act_func=act_func)
+        serializers.load_npz(save_name, vae)
 
+ 
     # 再構成
     ar = Reconst(vae)
     feat_train, reconst_train, err_train = ar(train_data)
-    feat_test,  reconst_test,  err_test  = ar(test_data)
 
+    # plot時の色を設定する
     col = ['r','g','b','c','m','y','orange','black','gray','violet']
     c_list = []
     for i in range(train_label.shape[0]):
         c_list.append(col[train_label[i]])
-        
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
     for i in range(3000):
-        ax.scatter(x=feat_train[i,0],y=feat_train[i,1],marker='.',color=c_list[i])
+        ax.scatter(x=feat_train[i,0], y=feat_train[i,1], marker='.', color=c_list[i])
     plt.show()
-
 
     rn = np.arange(-3,3,0.3)
     dt = []
     for i in range(20):
         for j in range(20):
             dt.append( np.array( [rn[i],rn[j]],np.float32) )
-    dt=np.asarray(dt)
+    dt = np.asarray(dt)
 
-    rc = ar.decode(dt).data
+    rc = vae.decoder(dt).data
     
     fig = plt.figure()
     for i in range(0,400):
