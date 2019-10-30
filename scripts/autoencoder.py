@@ -150,6 +150,8 @@ class Reconst():
 # trainerによるオーエンコーダの学習
 def training_autoencoder(data, hidden, max_epoch, batchsize, \
              fe='sigmoid', fd='sigmoid', gpu_device=0, \
+             old_model=None, \
+             out_dir='result', \
              ae_method=None, rho=0.05, s=0.001):
     
     # 入力サイズ
@@ -158,7 +160,10 @@ def training_autoencoder(data, hidden, max_epoch, batchsize, \
     len_train = data.shape[0]
 
     # モデルの定義
-    ae = Autoencoder(inputs, hidden, fe=fe, fd=fd)
+    if old_model is None:
+        ae = Autoencoder(inputs, hidden, fe=fe, fd=fd)
+    else:
+        ae = old_model
     model = AutoencoderTrainer(ae, ae_method=ae_method, rho=rho, s=s)
     opt = optimizers.Adam()
     opt.setup(model)
@@ -169,7 +174,7 @@ def training_autoencoder(data, hidden, max_epoch, batchsize, \
 
     # 学習ループ
     updater = training.StandardUpdater(train_iter, opt, device=gpu_device)
-    trainer = training.Trainer(updater, (max_epoch, 'epoch'), out="result")
+    trainer = training.Trainer(updater, (max_epoch, 'epoch'), out=out_dir)
     trainer.extend(extensions.LogReport())
     trainer.extend(extensions.PrintReport( ['epoch', 'main/loss']))
     trainer.run()
