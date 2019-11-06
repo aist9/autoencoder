@@ -76,8 +76,10 @@ class AutoencoderTrainer(Chain):
         if self.ae_method == 'sparse':
             # sparsei AEの場合は隠れ層出力を受け取りKLDを計算する
             y, h = self.ae(x, hidden_out=True)
-            kld = self.reg_sparse(h)
-            loss = F.mean_squared_error(y, t) + self.s * kld
+            loss = F.mean_squared_error(y, t)
+            if 0 < self.s:
+                kld = self.reg_sparse(h)
+                loss += self.s * kld
         else:
             y = self.ae(x)
             loss = F.mean_squared_error(y, t)
@@ -148,6 +150,8 @@ class Reconst():
 # trainerによるオーエンコーダの学習
 def training_autoencoder(data, hidden, max_epoch, batchsize, \
              fe='sigmoid', fd='sigmoid', gpu_device=0, \
+             old_model=None, \
+             out_dir='result', \
              ae_method=None, rho=0.05, s=0.001):
     
     # 入力サイズ
@@ -156,7 +160,10 @@ def training_autoencoder(data, hidden, max_epoch, batchsize, \
     len_train = data.shape[0]
 
     # モデルの定義
-    ae = Autoencoder(inputs, hidden, fe=fe, fd=fd)
+    if old_model is None:
+        ae = Autoencoder(inputs, hidden, fe=fe, fd=fd)
+    else:
+        ae = old_model
     model = AutoencoderTrainer(ae, ae_method=ae_method, rho=rho, s=s)
     opt = optimizers.Adam()
     opt.setup(model)
@@ -167,7 +174,7 @@ def training_autoencoder(data, hidden, max_epoch, batchsize, \
 
     # 学習ループ
     updater = training.StandardUpdater(train_iter, opt, device=gpu_device)
-    trainer = training.Trainer(updater, (max_epoch, 'epoch'), out="result")
+    trainer = training.Trainer(updater, (max_epoch, 'epoch'), out=out_dir)
     trainer.extend(extensions.LogReport())
     trainer.extend(extensions.PrintReport( ['epoch', 'main/loss']))
     trainer.run()
@@ -226,15 +233,33 @@ def train_all(data, models, epoch, batchSize, \
 
     return models
 
-# Stacked AutoEncoderの学習
-#     リスト管理で学習
-#     folderで指定した場所に各層の学習モデルを保存してくれる
-#     train_modeがFalseのときはfolderからモデルを読み込み
+# 保守用に残している（後々廃止予定）
 def train_stacked(train, hidden, epoch, batchsize, folder, \
                   train_mode=True, \
                   fe='sigmoid', fd='sigmoid', \
                   ae_method=None, rho=0.05, s=0.001,
-                 ):
+                  fine_tune=False
+                ):
+    training_stacked_autoencoder(\
+                  train, hidden, epoch, batchsize, folder, \
+                  train_mode=True, \
+                  fe=fe, fd=fd, \
+                  ae_method=ae_method, rho=rho, s=s,
+                  fine_tune=fine_tune
+                )
+
+# Stacked AutoEncoderの学習
+#     リスト管理で学習
+#     folderで指定した場所に各層の学習モデルを保存してくれる
+#     train_modeがFalseのときはfolderからモデルを読み込み
+def training_stacked_autoencoder(
+                  train, hidden, epoch, batchsize,
+                  model_dir, out_dir='result',
+                  train_mode=True,
+                  fe='sigmoid', fd='sigmoid',
+                  ae_method=None, rho=0.05, s=0.001,
+                  fine_tune=False
+                ):
  
     inputs = train.shape[1]
     layer  = [inputs] + hidden
@@ -247,7 +272,7 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
     print('layer' + str(layer))
 
     # 学習モデルの保存場所
-    folder_model = os.path.join(folder, hidden_num_str)
+    folder_model = os.path.join(model_dir, hidden_num_str)
     os.makedirs(folder_model, exist_ok=True)
 
     # 隠れ層分だけloop
@@ -272,15 +297,18 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
         if type(rho) == type([]):
             rho_ = rho[i]
         if type(s) == type([]):
-            s = s[i]
+            s_ = s[i]
 
         # 学習を行いsaveする
         if train_mode == True or not os.path.isfile(save_name):
             # 学習を行い、リストにappendしていく
             print("Layer ", i + 1)
-            model_sub = training_autoencoder(feat, l_o, epoch, batchsize, fe=fe, fd=fd,\
-                                 ae_method=ae_method, rho=rho_, s=s_)
-            models.append(model_sub)
+            model_sub = training_autoencoder(feat, l_o, epoch, batchsize, 
+                                 fe=act_enc, fd=act_dec,
+                                 out_dir=out_dir,
+                                 ae_method=ae_method, rho=rho_, s=s_
+                                )
+            model.append(model_sub)
             feat = model_sub.encoder(Variable(feat)).data
 
             # モデルの保存
@@ -293,7 +321,7 @@ def train_stacked(train, hidden, epoch, batchsize, folder, \
             model.append(model_sub)
 
     # 最後に全モデルを通して学習し直す
-    if train_mode and len(model)>1:
+    if fine_tune and train_mode and len(model)>1:
         print("Layer all")
         model = train_all(train, model, epoch, batchsize)
         for i,(l_i, l_o) in enumerate(zip(layer[0:-1], layer[1:])):
