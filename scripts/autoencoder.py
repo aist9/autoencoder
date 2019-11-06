@@ -233,11 +233,27 @@ def train_all(data, models, epoch, batchSize, \
 
     return models
 
+# 保守用に残している（後々廃止予定）
+def train_stacked(train, hidden, epoch, batchsize, folder, \
+                  train_mode=True, \
+                  fe='sigmoid', fd='sigmoid', \
+                  ae_method=None, rho=0.05, s=0.001,
+                  fine_tune=False
+                ):
+    training_stacked_autoencoder(\
+                  train, hidden, epoch, batchsize, folder, \
+                  train_mode=True, \
+                  fe=fe, fd=fd, \
+                  ae_method=ae_method, rho=rho, s=s,
+                  fine_tune=fine_tune
+                )
+
 # Stacked AutoEncoderの学習
 #     リスト管理で学習
 #     folderで指定した場所に各層の学習モデルを保存してくれる
 #     train_modeがFalseのときはfolderからモデルを読み込み
-def train_stacked(train, hidden, epoch, batchsize, folder, \
+def training_stacked_autoencoder(\
+                  train, hidden, epoch, batchsize, folder, \
                   train_mode=True, \
                   fe='sigmoid', fd='sigmoid', \
                   ae_method=None, rho=0.05, s=0.001,
