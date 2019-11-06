@@ -377,15 +377,15 @@ def main():
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode:
         # logの出力先
-        out_dir = os.path.join(save_dir, 'result')
+        out_dir = os.path.join(save_dir, 'result_autoencoder')
         # Autoencoderの学習
         model = training_autoencoder(train_data, hidden, epoch, batchsize, out_dir=out_dir)
         # モデルの保存
         serializers.save_npz(save_model_name, model)
-
-    # 保存したモデルから読み込み
-    model = Autoencoder(784, hidden)
-    serializers.load_npz(save_model_name, model)
+    else:
+        # 保存したモデルから読み込み
+        model = Autoencoder(784, hidden)
+        serializers.load_npz(save_model_name, model)
 
     # 再構成を行う
     # AutoEncoderの再構成を行うクラスを定義
