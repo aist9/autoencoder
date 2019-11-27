@@ -346,7 +346,7 @@ def main():
             train_mode = False
     
     # 出力先のフォルダを生成
-    save_dir = '../output/'
+    save_dir = '../output/result_autoencoder'
     os.makedirs(save_dir, exist_ok = True)
 
     # MNISTデータの読み込み
@@ -371,21 +371,19 @@ def main():
     hidden = 100
 
     # 作成するモデルの保存先+名前
-    save_model_name = os.path.join(save_dir, 'autoencoder_sample.npz')
+    model_path = os.path.join(save_dir, 'autoencoder_sample.npz')
 
     # AutoEncoderの学習
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode:
-        # logの出力先
-        out_dir = os.path.join(save_dir, 'result_autoencoder')
         # Autoencoderの学習
-        model = training_autoencoder(train_data, hidden, epoch, batchsize, out_dir=out_dir)
+        model = training_autoencoder(train_data, hidden, epoch, batchsize, out_dir=save_dir)
         # モデルの保存
-        serializers.save_npz(save_model_name, model)
+        serializers.save_npz(model_path, model)
     else:
         # 保存したモデルから読み込み
         model = Autoencoder(784, hidden)
-        serializers.load_npz(save_model_name, model)
+        serializers.load_npz(model_path, model)
 
     # 再構成を行う
     # AutoEncoderの再構成を行うクラスを定義

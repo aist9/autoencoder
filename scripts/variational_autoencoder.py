@@ -11,36 +11,15 @@ from chainer import datasets, iterators
 from chainer import training
 from chainer import reporter
 from chainer.training import extensions
+from chainer import serializers
 
 import cupy
 import chainer.computational_graph as c
 from chainer import Variable, optimizers, initializer,cuda
 from chainer.functions.loss.vae import gaussian_kl_divergence
 
-class Xavier(initializer.Initializer):
-    """
-    Xavier initializaer 
-    Reference: 
-    * https://jmetzen.github.io/2015-11-27/vae.html
-    * https://stackoverflow.com/questions/33640581/how-to-do-xavier-initialization-on-tensorflow
-    """
-    def __init__(self, fan_in, fan_out, constant=1, dtype=None):
-        self.fan_in = fan_in
-        self.fan_out = fan_out
-        self.high = constant*np.sqrt(6.0/(fan_in + fan_out))
-        self.low = -self.high
-        super(Xavier, self).__init__(dtype)
-
-    def __call__(self, array):
-        xp = cuda.get_array_module(array)
-        args = {'low': self.low, 'high': self.high, 'size': array.shape}
-        if xp is not np:
-            # Only CuPy supports dtype option
-            if self.dtype == np.float32 or self.dtype == np.float16:
-                # float16 is not supported in cuRAND
-                args['dtype'] = np.float32
-        array[...] = xp.random.uniform(**args)
-
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 # Variational AutoEncoder class
 class VariationalAutoEncoder(Chain):
@@ -77,23 +56,23 @@ class VariationalAutoEncoder(Chain):
         # decoder: ボトルネック->出力層へ昇順
         for i in range(encoder_depth - 2):
             # エンコード層を入力層からボトルネックの順で作成
-            l = L.Linear(layers[i], layers[i+1], initialW=Xavier(layers[i], layers[i+1]))
+            l = L.Linear(layers[i], layers[i+1])
             name  = 'enc{}'.format(i)
             self.add_link(name, l)
 
             # デコード層をボトルネックから出力層の順で作成
             j = encoder_depth - i - 1
-            l = L.Linear(layers[j], layers[j-1], initialW=Xavier(layers[i], layers[i+1]))
+            l = L.Linear(layers[j], layers[j-1])
             name  = 'dec{}'.format(i)
             self.add_link(name, l)
 
         # muとsigmaを出力する層
         # この2つは分岐して作成される
-        self.add_link('enc_mu' , L.Linear(layers[-2], layers[-1], initialW=Xavier(layers[-2], layers[-1])))
-        self.add_link('enc_var', L.Linear(layers[-2], layers[-1], initialW=Xavier(layers[-2], layers[-1])))
+        self.add_link('enc_mu' , L.Linear(layers[-2], layers[-1]))
+        self.add_link('enc_var', L.Linear(layers[-2], layers[-1]))
 
         # 出力層
-        self.add_link('dec_out', L.Linear(layers[1], layers[0], initialW=Xavier(layers[1], layers[0])))
+        self.add_link('dec_out', L.Linear(layers[1], layers[0]))
  
     # 特徴量が必要な場合はfeat_returm=True
     def encoder(self, x):
@@ -132,10 +111,8 @@ class VariationalAutoencoderTrainer(Chain):
 
         # 再構成誤差に用いる関数
         self.loss_function = loss_function
-        if loss_function == 'bernoulli':
-            self.use_act_out = False
-            self.use_sigmoid = False
-    
+        
+        # 
         self.k = k
         self.beta = beta
 
@@ -160,10 +137,10 @@ class VariationalAutoencoderTrainer(Chain):
                 reconst = self.vae.decoder(z, use_sigmoid=False)
                 reconst_loss += F.bernoulli_nll(x, reconst) / (self.k * num_data)
 
-        kld = F.mean(gaussian_kl_divergence(mu, var))
+        kld = gaussian_kl_divergence(mu, var, reduce='mean')
         loss = reconst_loss + self.beta * kld 
 
-        # Chainerのreport機能
+        # report
         reporter.report({'loss': loss}, self)
         reporter.report({'reconst_loss': reconst_loss}, self)
         reporter.report({'kld': kld}, self)
@@ -198,7 +175,7 @@ class Reconst():
         return err
 
     # 再構成誤差から平均と標準偏差を算出してしきい値を決める
-    def err_to_threshold(self, err, sigma = 3):
+    def err_to_threshold(self, err, sigma=3):
         mn  = np.mean(err)
         std = np.std(err)
         th = mn + sigma * std
@@ -213,7 +190,8 @@ class Reconst():
 # trainerによるVAEの学習
 def training_vae(data, hidden, max_epoch, batchsize, \
              act_func='sigmoid', gpu_device=0, \
-             loss_function='mse'):
+             loss_function='mse',
+             out_dir='result'):
     
     # 入力サイズ
     inputs = data.shape[1]
@@ -231,7 +209,7 @@ def training_vae(data, hidden, max_epoch, batchsize, \
 
     # 学習ループ
     updater = training.StandardUpdater(train_iter, opt, device=gpu_device)
-    trainer = training.Trainer(updater, (max_epoch, 'epoch'), out="result")
+    trainer = training.Trainer(updater, (max_epoch, 'epoch'), out=out_dir)
     trainer.extend(extensions.LogReport())
     trainer.extend(extensions.PrintReport( ['epoch', 'main/loss',
         'main/reconst_loss', 'main/kld', 'elapsed_time']))
@@ -242,4 +220,90 @@ def training_vae(data, hidden, max_epoch, batchsize, \
         vae.to_cpu()
 
     return vae
+
+# main
+def main():
+    # sampleでは使うのでimportする
+    import cv2
+
+    # コマンドライン引数を読み込み
+    # 引数が'-1'なら学習しない
+    args = sys.argv
+    train_mode = True 
+    if 2 <= len(args):
+        if args[1] == '-1':
+            train_mode = False
+    
+    # 出力先のフォルダを生成
+    save_dir = '../output/result_vae'
+    os.makedirs(save_dir, exist_ok=True)
+
+    # 保存するモデルの名前
+    save_name = 'vae_model.npz'
+    # モデルの保存パス
+    save_path = os.path.join(save_dir, save_name)
+
+    # MNISTデータの読み込み
+    train, test = chainer.datasets.get_mnist()
+
+    # 学習データとラベルの抜き取り
+    train_data, train_label = train._datasets
+
+    # 学習の条件
+    # エポックとミニバッチサイズ
+    epoch = 50
+    batchsize = 100
+    # 隠れ層のユニット数
+    hidden = [100, 20, 2]
+    # 活性化関数
+    act_func = 'tanh'
+
+    # VAEの学習
+    if train_mode:
+        vae = training_vae(train_data, hidden, epoch, batchsize, \
+                 act_func=act_func, gpu_device=0, \
+                 loss_function='bernoulli',
+                 out_dir=save_dir)
+        serializers.save_npz(save_path, vae)
+    else:
+        # 保存したモデルから読み込み
+        layers = [train_data.shape[1]] + hidden
+        vae = VariationalAutoEncoder(layers, act_func=act_func)
+        serializers.load_npz(save_path, vae)
+ 
+    # 再構成
+    ar = Reconst(vae)
+    feat_train, reconst_train, err_train = ar(train_data)
+
+    # plot時の色を設定する
+    col = ['r','g','b','c','m','y','orange','black','gray','violet']
+    c_list = []
+    for i in range(train_label.shape[0]):
+        c_list.append(col[train_label[i]])
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for i in range(3000):
+        ax.scatter(x=feat_train[i,0], y=feat_train[i,1], marker='.', color=c_list[i])
+    plt.show()
+
+    rn = np.arange(-3,3,0.3)
+    dt = []
+    for i in range(20):
+        for j in range(20):
+            dt.append( np.array( [rn[i],rn[j]],np.float32) )
+    dt = np.asarray(dt)
+
+    rc = vae.decoder(dt).data
+    
+    fig = plt.figure()
+    for i in range(0,400):
+        #cv2.imshow('',rc[i].reshape((28,28)))
+        ax1 = fig.add_subplot(20,20,i+1) 
+        ax1.imshow(rc[i].reshape((28,28)),cmap='gray')
+        #cv2.waitKey(1)
+    plt.show()
+    
+if __name__=='__main__':
+    main()
 

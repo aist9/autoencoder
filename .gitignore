@@ -2,6 +2,6 @@
 output
 __pycache__
 *pyc
-result
+result_*
 *.npy
 *.npz
