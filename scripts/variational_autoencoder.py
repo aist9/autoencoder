@@ -21,7 +21,9 @@ from chainer.functions.loss.vae import gaussian_kl_divergence
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+# **********************************************
 # Variational AutoEncoder class
+# **********************************************
 class VariationalAutoEncoder(Chain):
     def __init__(self, layers, act_func='sigmoid'):
         super(VariationalAutoEncoder, self).__init__()
@@ -104,7 +106,9 @@ class VariationalAutoEncoder(Chain):
 
         return reconst
 
-# VAEをtrainerで学習するためのラッパー
+# **********************************************
+# Wrapper
+# **********************************************
 class VariationalAutoencoderTrainer(Chain):
     def __init__(self, vae, beta=1.0, k=1, loss_function='mse'):
         super(VariationalAutoencoderTrainer, self).__init__(vae=vae)
@@ -147,8 +151,9 @@ class VariationalAutoencoderTrainer(Chain):
 
         return loss
 
-
-# 再構成と再構成誤差の計算
+# **********************************************
+# Reconstruction
+# **********************************************
 class Reconst():
     # 学習、モデルを渡しておく
     def __init__(self, model):
@@ -186,10 +191,11 @@ class Reconst():
         result = [True if err[i] <= th else False for i in range(len(err))]
         return result
 
-
-# trainerによるVAEの学習
-def training_vae(data, hidden, max_epoch, batchsize, \
-             act_func='sigmoid', gpu_device=0, \
+# **********************************************
+# Training vae by trainer
+# **********************************************
+def training_vae(data, hidden, max_epoch, batchsize,
+             act_func='sigmoid', gpu_device=0,
              loss_function='mse',
              out_dir='result'):
     
@@ -221,7 +227,9 @@ def training_vae(data, hidden, max_epoch, batchsize, \
 
     return vae
 
-# main
+# **********************************************
+# Sample: training MNIST by vae
+# **********************************************
 def main():
     # sampleでは使うのでimportする
     import cv2
@@ -260,8 +268,8 @@ def main():
 
     # VAEの学習
     if train_mode:
-        vae = training_vae(train_data, hidden, epoch, batchsize, \
-                 act_func=act_func, gpu_device=0, \
+        vae = training_vae(train_data, hidden, epoch, batchsize,
+                 act_func=act_func, gpu_device=0,
                  loss_function='bernoulli',
                  out_dir=save_dir)
         serializers.save_npz(save_path, vae)

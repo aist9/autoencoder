@@ -13,7 +13,9 @@ from chainer import reporter
 from chainer.training import extensions
 from chainer import serializers
 
+# **********************************************
 # autoencoder class
+# **********************************************
 class Autoencoder(Chain):
     def __init__(self, inputs, hidden, fe='sigmoid', fd='sigmoid'):
         super(Autoencoder, self).__init__()
@@ -59,7 +61,9 @@ class Autoencoder(Chain):
             data = F.relu(data)
         return data
 
-# trainerを使うためのラッパー
+# **********************************************
+# Wrapper
+# **********************************************
 class AutoencoderTrainer(Chain):
     def __init__(self, ae, ae_method=None, rho=0.05, s=0.001):
         super(AutoencoderTrainer, self).__init__(ae=ae)
@@ -97,7 +101,9 @@ class AutoencoderTrainer(Chain):
                     (1 - self.rho) * F.log((1 - self.rho) / (1 - rho_hat)))
         return kld
 
-# 再構成と再構成誤差の計算
+# **********************************************
+# Reconstruction
+# **********************************************
 class Reconst():
     # 学習、モデルを渡しておく
     def __init__(self, model):
@@ -119,7 +125,7 @@ class Reconst():
         err = self.reconst_err(data, reconst)
         return feat, reconst, err
 
-    # 入力データを再構成
+    # reconstruction
     def data2reconst(self, data):
         feat = Variable(data)
         for i in range(self.L):
@@ -148,16 +154,19 @@ class Reconst():
         result = [True if err[i] <= th else False for i in range(len(err))]
         return result
 
-# trainerによるオーエンコーダの学習
-def training_autoencoder(data, hidden, max_epoch, batchsize, \
-             fe='sigmoid', fd='sigmoid', gpu_device=0, \
-             old_model=None, \
-             out_dir='result', \
-             ae_method=None, rho=0.05, s=0.001):
+# **********************************************
+# Training autoencoder by trainer
+# **********************************************
+def training_autoencoder(
+        data, hidden, max_epoch, batchsize,
+        fe='sigmoid', fd='sigmoid', gpu_device=0,
+        ae_method=None, rho=0.05, s=0.001, 
+        old_model=None,
+        out_dir='result'):
     
-    # 入力サイズ
+    # input size
     inputs = data.shape[1]
-    # データの数
+    # number of data
     len_train = data.shape[0]
 
     # モデルの定義
@@ -173,22 +182,23 @@ def training_autoencoder(data, hidden, max_epoch, batchsize, \
     train = datasets.TupleDataset(data, data)
     train_iter = iterators.SerialIterator(train, batchsize)
 
-    # 学習ループ
+    # training
     updater = training.StandardUpdater(train_iter, opt, device=gpu_device)
     trainer = training.Trainer(updater, (max_epoch, 'epoch'), out=out_dir)
     trainer.extend(extensions.LogReport())
     trainer.extend(extensions.PrintReport( ['epoch', 'main/loss']))
     trainer.run()
 
-    # GPUを使っていた場合CPUに戻す
+    # GPU -> CPU
     if -1 < gpu_device:
         ae.to_cpu()
 
     return ae
 
 # 最後に全層を結合して再学習する
-def train_all(data, models, epoch, batchSize, \
-             gpu_use=True, gpu_device=0):
+def train_all(
+        data, models, epoch, batchSize,
+        gpu_use=True, gpu_device=0):
     
     if gpu_use == True:
         import cupy
@@ -235,32 +245,31 @@ def train_all(data, models, epoch, batchSize, \
     return models
 
 # 保守用に残している（後々廃止予定）
-def train_stacked(train, hidden, epoch, batchsize, folder, \
-                  train_mode=True, \
-                  fe='sigmoid', fd='sigmoid', \
-                  ae_method=None, rho=0.05, s=0.001,
-                  fine_tune=False
-                ):
-    training_stacked_autoencoder(\
-                  train, hidden, epoch, batchsize, folder, \
-                  train_mode=True, \
-                  fe=fe, fd=fd, \
-                  ae_method=ae_method, rho=rho, s=s,
-                  fine_tune=fine_tune
-                )
+def train_stacked(
+        train, hidden, epoch, batchsize, folder,
+        train_mode=True,
+        fe='sigmoid', fd='sigmoid',
+        ae_method=None, rho=0.05, s=0.001,
+        fine_tune=False):
 
-# Stacked AutoEncoderの学習
-#     リスト管理で学習
-#     folderで指定した場所に各層の学習モデルを保存してくれる
-#     train_modeがFalseのときはfolderからモデルを読み込み
+    training_stacked_autoencoder(
+        train, hidden, epoch, batchsize, folder,
+        train_mode=True,
+        fe=fe, fd=fd,
+        ae_method=ae_method, rho=rho, s=s,
+        fine_tune=fine_tune)
+    return model
+
+# **********************************************
+# Training stacked autoencoder by trainer
+# **********************************************
 def training_stacked_autoencoder(
-                  train, hidden, epoch, batchsize,
-                  model_dir, out_dir='result',
-                  train_mode=True,
-                  fe='sigmoid', fd='sigmoid',
-                  ae_method=None, rho=0.05, s=0.001,
-                  fine_tune=False
-                ):
+        train, hidden, epoch, batchsize,
+        model_dir, out_dir='result',
+        train_mode=True,
+        fe='sigmoid', fd='sigmoid',
+        ae_method=None, rho=0.05, s=0.001,
+        fine_tune=False):
  
     inputs = train.shape[1]
     layer  = [inputs] + hidden
@@ -333,8 +342,8 @@ def training_stacked_autoencoder(
     return model
 
 # **********************************************
-
-# sample: training MNIST by autoEncoder
+# Sample: training MNIST by autoencoder
+# **********************************************
 def main():
  
     # コマンドライン引数を読み込み
