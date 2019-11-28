@@ -1,5 +1,6 @@
 
-import os, sys
+import os
+import sys
 import numpy as np
 import chainer
 import chainer.functions as F
