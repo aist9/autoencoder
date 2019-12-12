@@ -1,5 +1,6 @@
 .DS_Store
 output
+data
 __pycache__
 *pyc
 result_*
