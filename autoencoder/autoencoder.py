@@ -60,6 +60,12 @@ class Autoencoder(nn.Module):
         return data
 
 # **********************************************
+# Loss function
+# **********************************************
+def loss_function(data, target):
+    return F.mse_loss(data, target)
+
+# **********************************************
 # Training autoencoder by trainer
 # **********************************************
 def training_autoencoder(
@@ -67,7 +73,7 @@ def training_autoencoder(
         fe='sigmoid', fd='sigmoid'):
 
     # log 
-    log_interval = 50
+    # log_interval = 50
     # GPUが使えればGPUを使う
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
@@ -76,21 +82,34 @@ def training_autoencoder(
     # number of data
     len_train = data.shape[0]
 
+    # 学習用の準備
+    train_data = torch.Tensor(data)
+    train_loader = DataLoader(train_data, batch_size=batchsize, shuffle=True)
+
     # モデルの定義
-    ae = Autoencoder(inputs, hidden, fe=fe, fd=fd)
-    model = AutoencoderTrainer(ae, ae_method=ae_method, rho=rho, s=s)
+    model = Autoencoder(inputs, hidden)
     opt = optim.Adam(model.parameters())
 
     # 学習開始
-    train(epochs=max_epoch, model=model,
-          train_loader=train_loader, valid_loader=valid_loader,
-          criterion=F.mse_loss, optimizer=opt,
-          writer=log_writer, device=device, log_interval=log_interval)
+    print('epoch\t\tloss')
+    for epoch in range(max_epoch):
+        loss_epoch = 0
+        for i, d in enumerate(train_loader):
+            d.to(device)
+            loss = loss_function(model(d), d)
+            model.zero_grad()
+            loss.backward()
+            opt.step()
+            loss_epoch += loss.data.numpy()
+        # 現在のepochとlossの表示
+        print(str(epoch+1) + '\t\t' + str(loss_epoch/(i+1)))
 
-    # モデル保存
-    torch.save(model.state_dict(), './checkpoints/final_weights.pt')
+    # train(epochs=max_epoch, model=model,
+          # train_loader=train_loader, valid_loader=valid_loader,
+          # criterion=F.mse_loss, optimizer=opt,
+          # writer=log_writer, device=device, log_interval=log_interval)
 
-    log_writer.close()
+    # log_writer.close()
 
     # データの形式を変換する
     # train = datasets.TupleDataset(data, data)
@@ -104,10 +123,10 @@ def training_autoencoder(
     # trainer.run()
 
     # GPU -> CPU
-    if device is 'cuda':
-        ae.to('cpu')
+    # if device is 'cuda':
+        # ae.to('cpu')
 
-    return ae
+    return model
 
 # **********************************************
 # Viasualization
@@ -249,35 +268,16 @@ def main():
     # 隠れ層のユニット数
     hidden = 10
 
-    # 学習用の準備
-    train_data = torch.Tensor(train_data)
-    train_loader = DataLoader(train_data, batch_size=batchsize, shuffle=True)
-
     # -------------------------------------
     # AutoEncoderの学習
     # -------------------------------------
 
     # モデルの定義
-    model = Autoencoder(784, hidden)
-    opt = optim.Adam(model.parameters())
     
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode is True:
         # Autoencoderの学習
-        print('epoch\t\tloss')
-        for n in range(epoch):
-            loss_epoch = 0
-            for i, d in enumerate(train_loader):
-                d.to('cuda')
-                y = model(d)
-                loss = F.mse_loss(y, d)
-                model.zero_grad()
-                loss.backward()
-                opt.step()
-                loss_epoch += loss.data.numpy()
-            # 現在のepochとlossの表示
-            print(str(n+1) + '\t\t' + str(loss_epoch/(i+1)))
-
+        model= training_autoencoder(train_data, hidden, epoch, batchsize)
         # モデルの保存
         torch.save(model.state_dict(), model_path)
     else:
