@@ -3,6 +3,8 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -344,37 +346,87 @@ def training_stacked_autoencoder(
     return model
 
 # **********************************************
-# Sample: training MNIST by autoencoder
+# Viasualization
 # **********************************************
 
 # 重みの可視化
-def encoder_w_plot_for_mnist(model, hidden, out_dir='output'):
+def weight_plot(
+        model, plot_num, select_layer='encoder',
+        reshape_size=None, save_path='w.png'):
 
-    weight = model.le.W.data
-    fig = plt.figure(figsize=(20,20))
-    line = int(np.sqrt(hidden))
-    mod = hidden % line
-    for i in range(hidden):
-        w = weight[i].reshape(28, 28)
-        ax = fig.add_subplot(
-                line, line+mod, 1+i)
-        ax.imshow(w, cmap='gray')
-    plt.savefig(
-            os.path.join(out_dir, 'waight.png'))
+    # 重みの抽出
+    if select_layer is 'encoder':
+        weight = model.le.W.data
+    else:
+        # decoderの場合は転置が必要
+        weight = model.ld.W.data.T
+
+    # 自動でsubplotの分割数を決める
+    row = int(np.sqrt(plot_num))
+    mod = plot_num % row
+    
+    # 保存形式が.pdfの場合の処理
+    if save_path in '.pdf':
+        pp = PdfPages(save_path)
+
+    # plot
+    for i in range(plot_num):
+        # 次の層i番目に向かう重みの抜き出し
+        w = weight[i]
+        # reshape(指定があれば)
+        if reshape_size is not None:
+            w = w.reshape(reshape_size)
+        # 自動でsubplotの番号を与えplot
+        plt.subplot(row, row+mod, 1+i)
+        plt.imshow(w, cmap='gray')
+    
+    # 保存処理
+    if save_path in '.pdf':
+        pp.savefig()
+        plt.close()
+        pp.close()
+    else:
+        plt.savefig(save_path)
+        plt.close()
 
 # バイアスの可視化
-def decoder_b_plot_for_mnist(model, out_dir='output'):
+def bias_plot(model, select_layer='encoder',
+              reshape_size=None, save_path='w.png'):
 
-    weight = model.ld.b.data
-    fig = plt.figure(figsize=(20,20))
-    b = weight.reshape(28, 28)
-    plt.imshow(b, cmap='gray')
-    plt.savefig(
-            os.path.join(out_dir, 'bias.png'))
+    # バイアスの抽出
+    if select_layer is 'encoder':
+        bias = model.le.b.data
+    else:
+        bias = model.ld.b.data
 
-# main function
+    # reshape(指定があれば)
+    if reshape_size is not None:
+        bias = bias.reshape(reshape_size)
+
+    # 保存形式が.pdfの場合の処理
+    if save_path in '.pdf':
+        pp = PdfPages(save_path)
+    # plot
+    plt.imshow(bias, cmap='gray')
+
+    # 保存処理
+    if save_path in '.pdf':
+        pp.savefig()
+        plt.close()
+        pp.close()
+    else:
+        plt.savefig(save_path)
+        plt.close()
+
+# **********************************************
+# Sample: training MNIST by autoencoder
+# **********************************************
 def main():
  
+    # -------------------------------------
+    # 設定
+    # -------------------------------------
+
     # コマンドライン引数を読み込み
     # 引数が'-1'なら学習しない
     args = sys.argv
@@ -385,25 +437,38 @@ def main():
     
     # 出力先のフォルダを生成
     save_dir = '../output/result_autoencoder'
-    os.makedirs(save_dir, exist_ok = True)
+    os.makedirs(save_dir, exist_ok=True)
+
+    # -------------------------------------
+    # データの準備
+    # -------------------------------------
+
+    # 指定した数字データを抜くための変数
+    number = 0
 
     # MNISTデータの読み込み
     train, test = chainer.datasets.get_mnist()
-    
-    # データとラベルに切り分け(ラベルは不要)
-    # 指定したnumber(ラベル)で抜き取り
-    number = 0
+
+    # データとラベルを取得
     train_data, train_label = train._datasets
-    train_data = train_data[train_label == number]
     test_data, test_label = test._datasets
+    
+    # 学習データ: 特定の番号のみ抽出したデータを用いる
+    train_data = train_data[train_label == number]
+
+    # テストデータ: ト特定の番号と適当なデータを合計で10個取得
     test_data_n  = test_data[test_label == number]
     test_label_n = test_label[test_label == number]
     test_data  = np.concatenate((test_data_n[0:5],  test_data[0:5]))
     test_label = np.concatenate((test_label_n[0:5], test_label[0:5]))
 
-    # 学習の条件
-    # エポックとミニバッチサイズ
+    # -------------------------------------
+    # 学習の準備
+    # -------------------------------------
+
+    # エポック
     epoch = 100
+    # ミニバッチサイズ
     batchsize = 50
     # 隠れ層のユニット数
     hidden = 10
@@ -411,7 +476,10 @@ def main():
     # 作成するモデルの保存先+名前
     model_path = os.path.join(save_dir, 'autoencoder_sample.npz')
 
+    # -------------------------------------
     # AutoEncoderの学習
+    # -------------------------------------
+
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode:
         # Autoencoderの学習
@@ -423,28 +491,62 @@ def main():
         model = Autoencoder(784, hidden)
         serializers.load_npz(model_path, model)
 
-    # 再構成を行う
-    # AutoEncoderの再構成を行うクラスを定義
+    # -------------------------------------
+    # 再構成
+    # -------------------------------------
+
+    # 再構成を行うクラスを定義
     ar = Reconst(model)
+    # 再構成を実行
     feat_train, reconst_train, err_train = ar(train_data)
     feat_test,  reconst_test,  err_test  = ar(test_data)
 
     # しきい値の計算(u+3sigma)
     mn, std, th = ar.err2threshold(err_train, 3)
-    print("th: ", th)
-
-    #print(labels[0:9])
-    print("label: ",test_label)
-
+    # しきい値を用いたときの異常判定
     result = ar.judgment(err_test, th)
+
+    print("label: ",test_label)
     print("result: ", result)
     print("errors: ", err_test)
 
-    # エンコーダの重みの可視化
-    encoder_w_plot_for_mnist(
-            model, hidden, out_dir=save_dir)
-    decoder_b_plot_for_mnist(
-            model, out_dir=save_dir)
+    # -------------------------------------
+    # 可視化
+    # -------------------------------------
+
+    # 保存先ディレクトリの生成
+    save_dir = os.path.join(save_dir, 'img')
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # 1次元に並んだデータをreshapeするサイズ
+    reshape_size = [28, 28]
+    for (save_name, dataset) in zip(
+            ['input', 'reconst'], [test_data, reconst_test]):
+        # 入出力をplot
+        for i, d in enumerate(dataset):
+            save_path = os.path.join(
+                    save_dir,
+                    '_'.join([save_name, str(i+1)]) + '.png')
+            d = d.reshape(reshape_size)
+            plt.imshow(d, cmap='gray')
+            plt.savefig(save_path)
+
+    # encoderの重みを可視化
+    save_path = os.path.join(save_dir, 'encoder_weight.png')
+    weight_plot(
+            model, hidden, select_layer='encoder',
+            reshape_size=[28, 28], save_path=save_path)
+
+    # decoderの重みを可視化
+    save_path = os.path.join(save_dir, 'decoder_weight.png')
+    weight_plot(
+            model, hidden, select_layer='decoder',
+            reshape_size=[28, 28], save_path=save_path)
+
+    # decoedrのバイアスを可視化
+    save_path = os.path.join(save_dir, 'decoder_bias.png')
+    bias_plot(model, select_layer='decoder',
+              reshape_size=[28, 28], save_path=save_path)
 
 if __name__ == '__main__':
     main()
