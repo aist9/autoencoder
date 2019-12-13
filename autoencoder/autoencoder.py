@@ -1,6 +1,8 @@
 import os 
 import sys
-import numpy
+import numpy as np
+from sklearn.datasets import fetch_openml
+import matplotlib.pyplot as plt
 
 # pytorch
 import torch
@@ -107,21 +109,96 @@ def training_autoencoder(
 
     return ae
 
-# 指定した値で正規化
-class Normalization(object):
-    def __init__(self, value):
-        self.value = value
-    def __call__(self, data):
-        size = data.shape
-        if len(size) is 3:
-            data = data.reshape(size[0], size[1]*size[2])
-        return data/self.value
+# **********************************************
+# Viasualization
+# **********************************************
+
+# 重みの可視化
+def weight_plot(
+        model, plot_num, select_layer='encoder',
+        reshape_size=None, save_path='w.png'):
+
+    # パラメータの抽出
+    param = model.state_dict()
+
+    # 重みの抽出
+    if select_layer is 'encoder':
+        weight = param['le.weight'].clone().numpy()
+    else:
+        # decoderの場合は転置が必要
+        weight = param['ld.weight'].clone().numpy().T
+
+    # 自動でsubplotの分割数を決める
+    row = int(np.sqrt(plot_num))
+    mod = plot_num % row
+    
+    # 保存形式が.pdfの場合の処理
+    if save_path in '.pdf':
+        pp = PdfPages(save_path)
+
+    # plot
+    for i in range(plot_num):
+        # 次の層i番目に向かう重みの抜き出し
+        w = weight[i]
+        # reshape(指定があれば)
+        if reshape_size is not None:
+            w = w.reshape(reshape_size)
+        # 自動でsubplotの番号を与えplot
+        plt.subplot(row, row+mod, 1+i)
+        plt.imshow(w, cmap='gray')
+    
+    # 保存処理
+    if save_path in '.pdf':
+        pp.savefig()
+        plt.close()
+        pp.close()
+    else:
+        plt.savefig(save_path)
+        plt.close()
+
+# バイアスの可視化
+def bias_plot(model, select_layer='encoder',
+              reshape_size=None, save_path='w.png'):
+
+    # パラメータの抽出
+    param = model.state_dict()
+
+    # バイアスの抽出
+    if select_layer is 'encoder':
+        bias = param['le.bias'].clone().numpy()
+    else:
+        bias = param['ld.bias'].clone().numpy().T
+
+    # reshape(指定があれば)
+    if reshape_size is not None:
+        bias = bias.reshape(reshape_size)
+
+    # 保存形式が.pdfの場合の処理
+    if save_path in '.pdf':
+        pp = PdfPages(save_path)
+    # plot
+    plt.imshow(bias, cmap='gray')
+
+    # 保存処理
+    if save_path in '.pdf':
+        pp.savefig()
+        plt.close()
+        pp.close()
+    else:
+        plt.savefig(save_path)
+        plt.close()
+
+
 
 # **********************************************
 # Sample: training MNIST by autoencoder
 # **********************************************
 def main():
  
+    # -------------------------------------
+    # 設定
+    # -------------------------------------
+
     # コマンドライン引数を読み込み
     # 引数が'-1'なら学習しない
     args = sys.argv
@@ -134,41 +211,127 @@ def main():
     save_dir = '../output/result_autoencoder'
     os.makedirs(save_dir, exist_ok=True)
 
-    # 前処理の定義
-    # trans = torchvision.transforms.Compose([
-        # torchvision.transforms.ToTensor(),
-        # torchvision.transforms.Normalize((0.5,), (0.5,))])
-    trans = torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        Normalization(255)])
+    # モデルの保存パス
+    model_path = os.path.join(save_dir, 'autoencoder_torch.npz')
 
-    # MNISTデータの読み込み
-    #     root: MNISTデータが格納されているパスを設定
-    #     train=Ture: 学習用のデータ取得
-    #     download=True: MNISTデータがrootになければDL
-    #     transform: 定義した前処理(設定すると自動で実行)
-    train_dataset = torchvision.datasets.MNIST(
-            root='../data', train=True, download=True, transform=trans)
+    # -------------------------------------
+    # データの準備
+    # -------------------------------------
 
-    # 学習用にデータを分ける
-    batchsize = 32
-    train_loader = DataLoader(train_dataset, batch_size=batchsize, shuffle=True)
+    # 指定した数字データを抜くための変数
+    number = 0
 
-    model = Autoencoder(784, 100)
+    # MNISTのデータセットを加工がしやすいようにsklearnで取得
+    mnist_data = fetch_openml('mnist_784', version=1, data_home='../data')
+ 
+    # 前処理: 0 - 1の範囲になるように正規化
+    data = mnist_data.data / 255
+    label = mnist_data.target
+    
+    # 学習とテストに分割
+    train_data = data[0:60000, :]
+    train_label = np.asarray(label[0:60000], dtype='int32')
+    test_data = data[60000:, :]
+    test_label = np.asarray(label[60000:], dtype='int32')
+
+    # 学習データ: 特定の番号のみ抽出したデータを用いる
+    train_data = train_data[train_label==number]
+    train_label = train_label[train_label==number]
+
+    # -------------------------------------
+    # 学習の準備
+    # -------------------------------------
+
+    # エポック
+    epoch = 100
+    # ミニバッチサイズ
+    batchsize = 50
+    # 隠れ層のユニット数
+    hidden = 10
+
+    # 学習用の準備
+    train_data = torch.Tensor(train_data)
+    train_loader = DataLoader(train_data, batch_size=batchsize, shuffle=True)
+
+    # -------------------------------------
+    # AutoEncoderの学習
+    # -------------------------------------
+
+    # モデルの定義
+    model = Autoencoder(784, hidden)
     opt = optim.Adam(model.parameters())
+    
+    # コマンドライン引数が'-1'の場合学習しない
+    if train_mode is True:
+        # Autoencoderの学習
+        print('epoch\t\tloss')
+        for n in range(epoch):
+            loss_epoch = 0
+            for i, d in enumerate(train_loader):
+                d.to('cuda')
+                y = model(d)
+                loss = F.mse_loss(y, d)
+                model.zero_grad()
+                loss.backward()
+                opt.step()
+                loss_epoch += loss.data.numpy()
+            # 現在のepochとlossの表示
+            print(str(n+1) + '\t\t' + str(loss_epoch/(i+1)))
 
-    max_epoch = 10
-    for epoch in range(max_epoch):
-        print(epoch + 1)
-        for i, (d, l) in enumerate(train_loader, 0):
-            d.to('cuda')
-            y = model(d)
-            loss = F.mse_loss(y, d)
-            model.zero_grad()
-            loss.backward()
-            opt.step()
+        # モデルの保存
+        torch.save(model.state_dict(), model_path)
+    else:
+        # 保存したモデルから読み込み
+        param = torch.load(model_path)
+        model.load_state_dict(param)
+
+    # -------------------------------------
+    # 再構成
+    # -------------------------------------
+
+    y = model(torch.Tensor(test_data))
+    y.to('cpu')
+    reconst_test = y.detach().clone().numpy()
+
+    # 保存先ディレクトリの生成
+    save_dir = os.path.join(save_dir, 'img_torch')
+    os.makedirs(save_dir, exist_ok=True)
+
+    # -------------------------------------
+    # 可視化
+    # -------------------------------------
     
+    # 1次元に並んだデータをreshapeするサイズ
+    reshape_size = [28, 28]
+    for (save_name, dataset) in zip(
+            ['input', 'reconst'], [test_data, reconst_test]):
+        # 入出力をplot
+        for i, d in enumerate(dataset):
+            save_path = os.path.join(
+                    save_dir,
+                    '_'.join([save_name, str(i+1)]) + '.png')
+            d = d.reshape(reshape_size)
+            plt.imshow(d, cmap='gray')
+            plt.savefig(save_path)
+            if i+1 == 10:
+                break
+
+    # # encoderの重みを可視化
+    save_path = os.path.join(save_dir, 'encoder_weight.png')
+    weight_plot(
+            model, hidden, select_layer='encoder',
+            reshape_size=[28, 28], save_path=save_path)
     
+    # decoderの重みを可視化
+    save_path = os.path.join(save_dir, 'decoder_weight.png')
+    weight_plot(
+            model, hidden, select_layer='decoder',
+            reshape_size=[28, 28], save_path=save_path)
+    
+    # decoedrのバイアスを可視化
+    save_path = os.path.join(save_dir, 'decoder_bias.png')
+    bias_plot(model, select_layer='decoder',
+              reshape_size=[28, 28], save_path=save_path)
 
 if __name__ == '__main__':
     main()
