@@ -2,6 +2,7 @@
 import os
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -345,6 +346,33 @@ def training_stacked_autoencoder(
 # **********************************************
 # Sample: training MNIST by autoencoder
 # **********************************************
+
+# 重みの可視化
+def encoder_w_plot_for_mnist(model, hidden, out_dir='output'):
+
+    weight = model.le.W.data
+    fig = plt.figure(figsize=(20,20))
+    line = int(np.sqrt(hidden))
+    mod = hidden % line
+    for i in range(hidden):
+        w = weight[i].reshape(28, 28)
+        ax = fig.add_subplot(
+                line, line+mod, 1+i)
+        ax.imshow(w, cmap='gray')
+    plt.savefig(
+            os.path.join(out_dir, 'waight.png'))
+
+# バイアスの可視化
+def decoder_b_plot_for_mnist(model, out_dir='output'):
+
+    weight = model.ld.b.data
+    fig = plt.figure(figsize=(20,20))
+    b = weight.reshape(28, 28)
+    plt.imshow(b, cmap='gray')
+    plt.savefig(
+            os.path.join(out_dir, 'bias.png'))
+
+# main function
 def main():
  
     # コマンドライン引数を読み込み
@@ -364,7 +392,7 @@ def main():
     
     # データとラベルに切り分け(ラベルは不要)
     # 指定したnumber(ラベル)で抜き取り
-    number = 5
+    number = 0
     train_data, train_label = train._datasets
     train_data = train_data[train_label == number]
     test_data, test_label = test._datasets
@@ -375,10 +403,10 @@ def main():
 
     # 学習の条件
     # エポックとミニバッチサイズ
-    epoch = 10
-    batchsize = 32
+    epoch = 100
+    batchsize = 50
     # 隠れ層のユニット数
-    hidden = 100
+    hidden = 10
 
     # 作成するモデルの保存先+名前
     model_path = os.path.join(save_dir, 'autoencoder_sample.npz')
@@ -412,8 +440,12 @@ def main():
     print("result: ", result)
     print("errors: ", err_test)
 
+    # エンコーダの重みの可視化
+    encoder_w_plot_for_mnist(
+            model, hidden, out_dir=save_dir)
+    decoder_b_plot_for_mnist(
+            model, out_dir=save_dir)
 
 if __name__ == '__main__':
     main()
-
 

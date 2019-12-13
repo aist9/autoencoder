@@ -4,11 +4,10 @@ import numpy
 
 # pytorch
 import torch
+import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-import torchvision
 from torch.utils.data import DataLoader
 
 # **********************************************
@@ -168,6 +167,8 @@ def main():
             model.zero_grad()
             loss.backward()
             opt.step()
+    
+    
 
 if __name__ == '__main__':
     main()
