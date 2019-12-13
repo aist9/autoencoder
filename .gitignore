@@ -6,3 +6,5 @@ __pycache__
 result_*
 *.npy
 *.npz
+.png
+.pdf
