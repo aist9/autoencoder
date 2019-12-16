@@ -52,11 +52,11 @@ class Autoencoder(nn.Module):
     # 活性化関数
     def activation_function(self, data, func): 
         if func == 'tanh':
-            data = F.tanh(data)
+            data = torch.tanh(data)
         elif func == 'sigmoid':
             data = torch.sigmoid(data)
         elif func == 'relu':
-            data = F.relu(data)
+            data = torch.relu(data)
         return data
 
 # **********************************************
@@ -72,25 +72,21 @@ def training_autoencoder(
         data, hidden, max_epoch, batchsize,
         fe='sigmoid', fd='sigmoid'):
 
-    # log 
-    # log_interval = 50
     # GPUが使えればGPUを使う
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # input size
     inputs = data.shape[1]
-    # number of data
-    len_train = data.shape[0]
 
-    # 学習用の準備
+    # numpy -> tensor -> DataLoader
     train_data = torch.Tensor(data)
     train_loader = DataLoader(train_data, batch_size=batchsize, shuffle=True)
 
-    # モデルの定義
+    # Define the autoencoder model
     model = Autoencoder(inputs, hidden)
     opt = optim.Adam(model.parameters())
 
-    # 学習開始
+    # training
     print('epoch\t\tloss')
     for epoch in range(max_epoch):
         loss_epoch = 0
@@ -100,31 +96,10 @@ def training_autoencoder(
             model.zero_grad()
             loss.backward()
             opt.step()
+
             loss_epoch += loss.data.numpy()
-        # 現在のepochとlossの表示
+        # printing epoch and loss
         print(str(epoch+1) + '\t\t' + str(loss_epoch/(i+1)))
-
-    # train(epochs=max_epoch, model=model,
-          # train_loader=train_loader, valid_loader=valid_loader,
-          # criterion=F.mse_loss, optimizer=opt,
-          # writer=log_writer, device=device, log_interval=log_interval)
-
-    # log_writer.close()
-
-    # データの形式を変換する
-    # train = datasets.TupleDataset(data, data)
-    # train_iter = iterators.SerialIterator(train, batchsize)
-
-    # training
-    # updater = training.StandardUpdater(train_iter, opt, device=gpu_device)
-    # trainer = training.Trainer(updater, (max_epoch, 'epoch'), out=out_dir)
-    # trainer.extend(extensions.LogReport())
-    # trainer.extend(extensions.PrintReport( ['epoch', 'main/loss']))
-    # trainer.run()
-
-    # GPU -> CPU
-    # if device is 'cuda':
-        # ae.to('cpu')
 
     return model
 
@@ -206,8 +181,6 @@ def bias_plot(model, select_layer='encoder',
     else:
         plt.savefig(save_path)
         plt.close()
-
-
 
 # **********************************************
 # Sample: training MNIST by autoencoder
@@ -335,5 +308,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
