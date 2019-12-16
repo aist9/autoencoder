@@ -12,6 +12,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
+from ignite.metrics import Accuracy, Loss
+from ignite.contrib.handlers.tensorboard_logger import *
+
 # **********************************************
 # autoencoder class
 # **********************************************
@@ -65,41 +69,57 @@ class Autoencoder(nn.Module):
 def loss_function(data, target):
     return F.mse_loss(data, target)
 
+class LossFunction(object):
+    def __init__(self):
+        pass
+    def __call__(self, data, target):
+        return F.mse_loss(data, target)
+
 # **********************************************
 # Training autoencoder by trainer
 # **********************************************
-def training_autoencoder(
+def training_autoencoder_(
         data, hidden, max_epoch, batchsize,
         fe='sigmoid', fd='sigmoid'):
 
-    # GPUが使えればGPUを使う
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # gpu setting
+    device = 'cpu'
+    if torch.cuda.is_available():
+        device = 'cuda'
     
     # input size
     inputs = data.shape[1]
 
     # numpy -> tensor -> DataLoader
     train_data = torch.Tensor(data)
-    train_loader = DataLoader(train_data, batch_size=batchsize, shuffle=True)
+    train_data.to(device)
+    dataset = torch.utils.data.TensorDataset(train_data, train_data)
+    train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
 
     # Define the autoencoder model
     model = Autoencoder(inputs, hidden)
     opt = optim.Adam(model.parameters())
 
-    # training
-    print('epoch\t\tloss')
-    for epoch in range(max_epoch):
-        loss_epoch = 0
-        for i, d in enumerate(train_loader):
-            d.to(device)
-            loss = loss_function(model(d), d)
-            model.zero_grad()
-            loss.backward()
-            opt.step()
+    # loss function
+    criterion = LossFunction()
 
-            loss_epoch += loss.data.numpy()
-        # printing epoch and loss
-        print(str(epoch+1) + '\t\t' + str(loss_epoch/(i+1)))
+    # trainer
+    trainer = create_supervised_trainer(
+            model, opt, criterion, device=device)
+
+    # print loss value (each epoch)
+    @trainer.on(Events.EPOCH_COMPLETED)
+    def log_report(engine):
+        if engine.state.epoch == 1:
+            print('epoch\t\tloss')
+        print(f"{engine.state.epoch}\t\t{engine.state.output:.10f}")
+
+    # start training
+    trainer.run(train_loader, max_epochs=max_epoch)
+    
+    # gpu -> cpu
+    if device is not 'cpu':
+        model.to('cpu')
 
     return model
 
@@ -204,7 +224,7 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
 
     # モデルの保存パス
-    model_path = os.path.join(save_dir, 'autoencoder_torch.npz')
+    model_path = os.path.join(save_dir, 'autoencoder_torch')
 
     # -------------------------------------
     # データの準備
@@ -250,11 +270,12 @@ def main():
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode is True:
         # Autoencoderの学習
-        model= training_autoencoder(train_data, hidden, epoch, batchsize)
+        model = training_autoencoder_(train_data, hidden, epoch, batchsize)
         # モデルの保存
         torch.save(model.state_dict(), model_path)
     else:
         # 保存したモデルから読み込み
+        model = Autoencoder(784, hidden)
         param = torch.load(model_path)
         model.load_state_dict(param)
 
