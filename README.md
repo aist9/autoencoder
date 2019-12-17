@@ -5,21 +5,24 @@
 
 Autoencoder(AE)とVariational autoencoder(VAE)のサンプル
 
-**現在はPyTorchへの移植作業も行っています**
+**現在はPyTorchへの移植作業を行っています**
+
+Chainer版(ae_chain)は基本的にメンテナンスのみ、PyTorch版(ae_torch)が開発中です
 
 ## Requirement
 
 - Essential
-    - python3
-    - numpy
-    - matplotlib
-    - sklearn
-- Using chainer
-    - chainer
-    - cupy (training only)
-    - opencv (VAE only)
-- Using PyThorch
-    - pytorch
+    - Common
+        - python3
+        - numpy
+        - matplotlib
+    - Using chainer
+        - chainer
+        - cupy (training only)
+        - opencv (VAE only)
+    - Using PyThorch
+        - pytorch
+        - sklearn
 
 - Certified environment
     - Mac
@@ -33,7 +36,8 @@ Autoencoder(AE)とVariational autoencoder(VAE)のサンプル
         - numpy 1.17.0
         - chainer 6.2.0 (using chainer)
         - cupy-cuda101 6.2.0 (using chainer)
-        - torch 1.3.1 (using pytorch)
+        - pytorch 1.3.1 (using pytorch)
+        - pytorch-ignite 0.2.1
 
 ## Installation
 ```

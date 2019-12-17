@@ -1,19 +1,19 @@
 import os 
 import sys
 import numpy as np
-from sklearn.datasets import fetch_openml
 import matplotlib.pyplot as plt
+
+import json
+import math
 
 # pytorch
 import torch
-import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
 
-from ignite.engine import Events, create_supervised_trainer, create_supervised_evaluator
-from ignite.metrics import Accuracy, Loss
+from torch.utils.data import DataLoader
+from ignite.engine import Events, create_supervised_trainer
 from ignite.contrib.handlers.tensorboard_logger import *
 
 # **********************************************
@@ -66,9 +66,6 @@ class Autoencoder(nn.Module):
 # **********************************************
 # Loss function
 # **********************************************
-def loss_function(data, target):
-    return F.mse_loss(data, target)
-
 class LossFunction(object):
     def __init__(self):
         pass
@@ -78,9 +75,10 @@ class LossFunction(object):
 # **********************************************
 # Training autoencoder by trainer
 # **********************************************
-def training_autoencoder_(
+def training_autoencoder(
         data, hidden, max_epoch, batchsize,
-        fe='sigmoid', fd='sigmoid'):
+        fe='sigmoid', fd='sigmoid',
+        out_dir='result'):
 
     # gpu setting
     device = 'cpu'
@@ -89,8 +87,8 @@ def training_autoencoder_(
     
     # input size
     inputs = data.shape[1]
-
-    # numpy -> tensor -> DataLoader
+    
+    # conversion data: numpy -> tensor -> DataLoader
     train_data = torch.Tensor(data)
     train_data.to(device)
     dataset = torch.utils.data.TensorDataset(train_data, train_data)
@@ -107,16 +105,34 @@ def training_autoencoder_(
     trainer = create_supervised_trainer(
             model, opt, criterion, device=device)
 
+    # log variables init.
+    log = []
+    loss_iter = []
+
+    # add loss (each iter.)
+    @trainer.on(Events.ITERATION_COMPLETED)
+    def add_loss(engine):
+        loss_iter.append(engine.state.output)
+        
     # print loss value (each epoch)
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_report(engine):
+        loss = sum(loss_iter) / len(loss_iter)
+        log.append({'epoch':engine.state.epoch,
+                    'loss':loss})
         if engine.state.epoch == 1:
             print('epoch\t\tloss')
-        print(f"{engine.state.epoch}\t\t{engine.state.output:.10f}")
+        print(f'{engine.state.epoch}\t\t{loss:.10f}')
+        loss_iter.clear()
 
     # start training
     trainer.run(train_loader, max_epochs=max_epoch)
     
+    # log output
+    file_path = os.path.join(out_dir, 'log')
+    file_ = open(file_path, 'w')
+    json.dump(log, file_, indent=4)
+
     # gpu -> cpu
     if device is not 'cpu':
         model.to('cpu')
@@ -220,7 +236,7 @@ def main():
             train_mode = False
     
     # 出力先のフォルダを生成
-    save_dir = '../output/result_autoencoder'
+    save_dir = '../output/result_ae_torch'
     os.makedirs(save_dir, exist_ok=True)
 
     # モデルの保存パス
@@ -234,6 +250,7 @@ def main():
     number = 0
 
     # MNISTのデータセットを加工がしやすいようにsklearnで取得
+    from sklearn.datasets import fetch_openml
     mnist_data = fetch_openml('mnist_784', version=1, data_home='../data')
  
     # 前処理: 0 - 1の範囲になるように正規化
@@ -270,7 +287,9 @@ def main():
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode is True:
         # Autoencoderの学習
-        model = training_autoencoder_(train_data, hidden, epoch, batchsize)
+        model = training_autoencoder(
+                train_data, hidden, epoch, batchsize,
+                out_dir=save_dir)
         # モデルの保存
         torch.save(model.state_dict(), model_path)
     else:
