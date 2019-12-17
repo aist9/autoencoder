@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from torch.utils.data import DataLoader
-from ignite.engine import Events, create_supervised_trainer
+from ignite.engine import Engine, Events, _prepare_batch, create_supervised_trainer
 from ignite.contrib.handlers.tensorboard_logger import *
 
 # **********************************************
@@ -25,12 +25,10 @@ class Autoencoder(nn.Module):
         self.le = nn.Linear(inputs, hidden)
         self.ld = nn.Linear(hidden, inputs)
 
-        # 活性化関数の指定
         self.fe = fe
         self.fd = fd
 
     # Forward
-    # hidden_out=Trueにすると隠れ層出力もreturn
     def __call__(self, x, hidden_out=False):
         h = self.encoder(x)
         y = self.decoder(h)
@@ -53,7 +51,7 @@ class Autoencoder(nn.Module):
             y = self.activation_function(y, self.fd) 
         return y
     
-    # 活性化関数
+    # Activation function
     def activation_function(self, data, func): 
         if func == 'tanh':
             data = torch.tanh(data)
@@ -66,11 +64,49 @@ class Autoencoder(nn.Module):
 # **********************************************
 # Loss function
 # **********************************************
-class LossFunction(object):
-    def __init__(self):
-        pass
-    def __call__(self, data, target):
-        return F.mse_loss(data, target)
+class LossFunction_(object):
+    def __init__(self, ae_method=None, rho=0.05, s=0.001):
+        self.ae_method = ae_method
+        self.rho = rho 
+        self.s = s
+
+    def __call__(self, y, h, t):
+        loss = F.mse_loss(y, t)
+        # Sparse AE
+        if self.ae_method == 'sparse':
+            if 0 < self.s:
+                kld = self.reg_sparse(h)
+                loss += self.s * kld
+        return loss
+
+    def reg_sparse(self, h):
+        rho_hat = torch.sum(h, axis=0) / h.shape[0]
+        kld = torch.sum(self.rho * torch.log(self.rho / rho_hat) + \
+                    (1 - self.rho) * torch.log((1 - self.rho) / (1 - rho_hat)))
+        return kld
+
+# **********************************************
+# Trainer Wrraper
+# **********************************************
+def nn_trainer(
+        model, optimizer, loss_fn, metrics={}, device=None,
+        non_blocking=False,
+        prepare_batch=_prepare_batch):
+
+    if device:
+        model.to(device)
+
+    def _update(engine, batch):
+        optimizer.zero_grad()
+        # x, t = _prepare_batch(batch, device=device)
+        x, t = batch
+        y, h = model(x, hidden_out=True)
+        loss = loss_fn(y, h, t)
+        loss.backward()
+        optimizer.step()
+        return loss.item()
+
+    return Engine(_update)
 
 # **********************************************
 # Training autoencoder by trainer
@@ -99,10 +135,10 @@ def training_autoencoder(
     opt = optim.Adam(model.parameters())
 
     # loss function
-    criterion = LossFunction()
+    criterion = LossFunction_(ae_method=None, rho=0.05, s=0.001)
 
     # trainer
-    trainer = create_supervised_trainer(
+    trainer = nn_trainer(
             model, opt, criterion, device=device)
 
     # log variables init.
@@ -142,7 +178,6 @@ def training_autoencoder(
 # **********************************************
 # Viasualization
 # **********************************************
-
 # 重みの可視化
 def weight_plot(
         model, plot_num, select_layer='encoder',
