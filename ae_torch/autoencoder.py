@@ -345,16 +345,7 @@ def main():
 
     y = model(torch.Tensor(test_data))
     y.to('cpu')
-
-    h = model.encoder(torch.Tensor(test_data))
-    h.to('cpu')
-
     reconst_test = y.detach().clone().numpy()
-
-    feat_test = h.detach().clone().numpy()
-
-    print(feat_test[0])
-    
 
     # -------------------------------------
     # 可視化
