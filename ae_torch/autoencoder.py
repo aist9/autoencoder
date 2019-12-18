@@ -13,7 +13,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from torch.utils.data import DataLoader
-from ignite.engine import Engine, Events, _prepare_batch, create_supervised_trainer
+from ignite.engine import Engine, Events
+from ignite.utils import convert_tensor
 from ignite.contrib.handlers.tensorboard_logger import *
 
 # **********************************************
@@ -64,21 +65,27 @@ class Autoencoder(nn.Module):
 # **********************************************
 # Loss function
 # **********************************************
-class LossFunction_(object):
+class LossFunction(object):
     def __init__(self, ae_method=None, rho=0.05, s=0.001):
+        # calculation setting
         self.ae_method = ae_method
         self.rho = rho 
         self.s = s
 
+    # calculate loss
     def __call__(self, y, h, t):
+        # mse loss
         loss = F.mse_loss(y, t)
-        # Sparse AE
+
+        # For sparse AE
         if self.ae_method == 'sparse':
             if 0 < self.s:
                 kld = self.reg_sparse(h)
                 loss += self.s * kld
+
         return loss
 
+    # sparse regularization term
     def reg_sparse(self, h):
         rho_hat = torch.sum(h, axis=0) / h.shape[0]
         kld = torch.sum(self.rho * torch.log(self.rho / rho_hat) + \
@@ -89,19 +96,21 @@ class LossFunction_(object):
 # Trainer Wrraper
 # **********************************************
 def nn_trainer(
-        model, optimizer, loss_fn, metrics={}, device=None,
-        non_blocking=False,
-        prepare_batch=_prepare_batch):
+        model, optimizer, loss_function, device=None):
 
     if device:
         model.to(device)
 
+    def prepare_batch(batch, device=None):
+        x, y = batch
+        return (convert_tensor(x, device=device),
+                convert_tensor(y, device=device))
+
     def _update(engine, batch):
         optimizer.zero_grad()
-        # x, t = _prepare_batch(batch, device=device)
-        x, t = batch
+        x, t = prepare_batch(batch, device=device)
         y, h = model(x, hidden_out=True)
-        loss = loss_fn(y, h, t)
+        loss = loss_function(y, h, t)
         loss.backward()
         optimizer.step()
         return loss.item()
@@ -114,6 +123,7 @@ def nn_trainer(
 def training_autoencoder(
         data, hidden, max_epoch, batchsize,
         fe='sigmoid', fd='sigmoid',
+        ae_method=None, rho=0.05, s=0.001,
         out_dir='result'):
 
     # gpu setting
@@ -124,9 +134,8 @@ def training_autoencoder(
     # input size
     inputs = data.shape[1]
     
-    # conversion data: numpy -> tensor -> DataLoader
+    # conversion data
     train_data = torch.Tensor(data)
-    train_data.to(device)
     dataset = torch.utils.data.TensorDataset(train_data, train_data)
     train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
 
@@ -135,11 +144,10 @@ def training_autoencoder(
     opt = optim.Adam(model.parameters())
 
     # loss function
-    criterion = LossFunction_(ae_method=None, rho=0.05, s=0.001)
+    loss_function = LossFunction(ae_method=ae_method, rho=rho, s=s)
 
     # trainer
-    trainer = nn_trainer(
-            model, opt, criterion, device=device)
+    trainer = nn_trainer(model, opt, loss_function, device=device)
 
     # log variables init.
     log = []
@@ -153,12 +161,12 @@ def training_autoencoder(
     # print loss value (each epoch)
     @trainer.on(Events.EPOCH_COMPLETED)
     def log_report(engine):
+        epoch = engine.state.epoch
         loss = sum(loss_iter) / len(loss_iter)
-        log.append({'epoch':engine.state.epoch,
-                    'loss':loss})
+        log.append({'epoch':epoch,'loss':loss})
         if engine.state.epoch == 1:
             print('epoch\t\tloss')
-        print(f'{engine.state.epoch}\t\t{loss:.10f}')
+        print(f'{epoch}\t\t{loss:.10f}')
         loss_iter.clear()
 
     # start training
@@ -317,8 +325,6 @@ def main():
     # AutoEncoderの学習
     # -------------------------------------
 
-    # モデルの定義
-    
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode is True:
         # Autoencoderの学習
@@ -339,16 +345,25 @@ def main():
 
     y = model(torch.Tensor(test_data))
     y.to('cpu')
+
+    h = model.encoder(torch.Tensor(test_data))
+    h.to('cpu')
+
     reconst_test = y.detach().clone().numpy()
 
-    # 保存先ディレクトリの生成
-    save_dir = os.path.join(save_dir, 'img_torch')
-    os.makedirs(save_dir, exist_ok=True)
+    feat_test = h.detach().clone().numpy()
+
+    print(feat_test[0])
+    
 
     # -------------------------------------
     # 可視化
     # -------------------------------------
     
+    # 保存先ディレクトリの生成
+    save_dir = os.path.join(save_dir, 'img_torch')
+    os.makedirs(save_dir, exist_ok=True)
+
     # 1次元に並んだデータをreshapeするサイズ
     reshape_size = [28, 28]
     for (save_name, dataset) in zip(
