@@ -249,21 +249,48 @@ def main():
     # 指定した数字データを抜くための変数
     number = 0
 
-    # MNISTのデータセットを加工がしやすいようにsklearnで取得
-    from sklearn.datasets import fetch_openml
-    mnist_data = fetch_openml('mnist_784', version=1, data_home='../data')
- 
-    # 前処理: 0 - 1の範囲になるように正規化
-    data = mnist_data.data / 255
-    label = mnist_data.target
-    
-    # 学習とテストに分割
-    train_data = data[0:60000, :]
-    train_label = np.asarray(label[0:60000], dtype='int32')
-    test_data = data[60000:, :]
-    test_label = np.asarray(label[60000:], dtype='int32')
+    from torchvision.datasets import MNIST
+    import torchvision.transforms as transforms
 
-    # 学習データ: 特定の番号のみ抽出したデータを用いる
+    dataset = []
+    labels = []
+    for i in range(2):
+        if i == 0:
+            is_train = True
+            num_data = 60000
+        else:
+            is_train = False
+            num_data = 10000
+        
+        # Load MNIST
+        mnist = MNIST(
+                '../data', train=is_train,
+                download=True, transform=transforms.ToTensor())
+
+        # convert to DataLoder
+        data_loader = DataLoader(
+                mnist, batch_size=num_data, shuffle=False)
+        # convert to iter
+        data_iter = iter(data_loader)
+        # data and label extraction
+        data, label = data_iter.next()
+        # convert to numpy
+        data = data.numpy()
+        label = np.asarray(label.numpy(), dtype='int32')
+
+        # reshape data size: number of data times 784
+        size = data.shape
+        data = data.reshape([size[0], size[2] * size[3]])
+
+        dataset.append(data)
+        labels.append(label)
+
+    train_data = dataset[0]
+    train_label = labels[0]
+    test_data = dataset[1]
+    test_label = labels[1]
+
+    # 特定の番号のみ抽出
     train_data = train_data[train_label==number]
     train_label = train_label[train_label==number]
 
@@ -281,8 +308,6 @@ def main():
     # -------------------------------------
     # AutoEncoderの学習
     # -------------------------------------
-
-    # モデルの定義
     
     # コマンドライン引数が'-1'の場合学習しない
     if train_mode is True:
