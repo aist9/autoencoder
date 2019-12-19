@@ -57,7 +57,7 @@ from autoencoder import Reconst, Autoencoder, training_autoencoder
 # "~/workspace"に存在する場合
 from os.path import expanduser
 home = expanduser("~")
-sys.path.append(os.path.join(home, 'workspace', 'autoencoder/autoencoder_by_chainer'))
+sys.path.append(os.path.join(home, 'workspace', 'autoencoder/ae_chain'))
 ```
 
 ## ae_chain
