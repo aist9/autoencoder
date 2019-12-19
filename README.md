@@ -22,7 +22,8 @@ Chainer版(ae_chain)は基本的にメンテナンスのみ、PyTorch版(ae_torc
         - opencv (VAE only)
     - Using PyThorch
         - pytorch
-        - sklearn
+        - ignite
+        - torchvision
 
 - Certified environment
     - Mac
@@ -38,6 +39,7 @@ Chainer版(ae_chain)は基本的にメンテナンスのみ、PyTorch版(ae_torc
         - cupy-cuda101 6.2.0 (using chainer)
         - pytorch 1.3.1 (using pytorch)
         - pytorch-ignite 0.2.1
+        - torchvision 0.4.2
 
 ## Installation
 ```
