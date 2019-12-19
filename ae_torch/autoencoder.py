@@ -1,7 +1,6 @@
 import os 
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
 
 import json
 import math
@@ -299,6 +298,9 @@ def main():
     # -------------------------------------
     # 可視化
     # -------------------------------------
+    
+    # matplotlib
+    import matplotlib.pyplot as plt
 
     # 可視化を行う関数のimport 
     sys.path.append('../visualize')
