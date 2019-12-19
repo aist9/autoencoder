@@ -184,84 +184,6 @@ def training_autoencoder(
     return model
 
 # **********************************************
-# Viasualization
-# **********************************************
-# 重みの可視化
-def weight_plot(
-        model, plot_num, select_layer='encoder',
-        reshape_size=None, save_path='w.png'):
-
-    # パラメータの抽出
-    param = model.state_dict()
-
-    # 重みの抽出
-    if select_layer is 'encoder':
-        weight = param['le.weight'].clone().numpy()
-    else:
-        # decoderの場合は転置が必要
-        weight = param['ld.weight'].clone().numpy().T
-
-    # 自動でsubplotの分割数を決める
-    row = int(np.sqrt(plot_num))
-    mod = plot_num % row
-    
-    # 保存形式が.pdfの場合の処理
-    if save_path in '.pdf':
-        pp = PdfPages(save_path)
-
-    # plot
-    for i in range(plot_num):
-        # 次の層i番目に向かう重みの抜き出し
-        w = weight[i]
-        # reshape(指定があれば)
-        if reshape_size is not None:
-            w = w.reshape(reshape_size)
-        # 自動でsubplotの番号を与えplot
-        plt.subplot(row, row+mod, 1+i)
-        plt.imshow(w, cmap='gray')
-    
-    # 保存処理
-    if save_path in '.pdf':
-        pp.savefig()
-        plt.close()
-        pp.close()
-    else:
-        plt.savefig(save_path)
-        plt.close()
-
-# バイアスの可視化
-def bias_plot(model, select_layer='encoder',
-              reshape_size=None, save_path='w.png'):
-
-    # パラメータの抽出
-    param = model.state_dict()
-
-    # バイアスの抽出
-    if select_layer is 'encoder':
-        bias = param['le.bias'].clone().numpy()
-    else:
-        bias = param['ld.bias'].clone().numpy().T
-
-    # reshape(指定があれば)
-    if reshape_size is not None:
-        bias = bias.reshape(reshape_size)
-
-    # 保存形式が.pdfの場合の処理
-    if save_path in '.pdf':
-        pp = PdfPages(save_path)
-    # plot
-    plt.imshow(bias, cmap='gray')
-
-    # 保存処理
-    if save_path in '.pdf':
-        pp.savefig()
-        plt.close()
-        pp.close()
-    else:
-        plt.savefig(save_path)
-        plt.close()
-
-# **********************************************
 # Sample: training MNIST by autoencoder
 # **********************************************
 def main():
@@ -377,6 +299,10 @@ def main():
     # -------------------------------------
     # 可視化
     # -------------------------------------
+
+    # 可視化を行う関数のimport 
+    sys.path.append('../visualize')
+    import visualize
     
     # 保存先ディレクトリの生成
     save_dir = os.path.join(save_dir, 'img_torch')
@@ -397,22 +323,34 @@ def main():
             if i+1 == 10:
                 break
 
-    # # encoderの重みを可視化
+    # パラメータの抽出
+    param = model.state_dict()
+
+    # Encoderの重み
+    weight = param['le.weight'].clone().numpy()
+    # encoderの重みを可視化
     save_path = os.path.join(save_dir, 'encoder_weight.png')
-    weight_plot(
-            model, hidden, select_layer='encoder',
-            reshape_size=[28, 28], save_path=save_path)
+    visualize.weight_plot(weight,
+                          hidden,
+                          reshape_size=[28, 28],
+                          save_path=save_path)
     
+    # Decoderの重み(転置が必要)
+    weight = param['ld.weight'].clone().numpy().T
     # decoderの重みを可視化
     save_path = os.path.join(save_dir, 'decoder_weight.png')
-    weight_plot(
-            model, hidden, select_layer='decoder',
-            reshape_size=[28, 28], save_path=save_path)
-    
+    visualize.weight_plot(weight,
+                          hidden,
+                          reshape_size=[28, 28],
+                          save_path=save_path)
+
+    # バイアスの抽出
+    bias = param['ld.bias'].clone().numpy().T
     # decoedrのバイアスを可視化
     save_path = os.path.join(save_dir, 'decoder_bias.png')
-    bias_plot(model, select_layer='decoder',
-              reshape_size=[28, 28], save_path=save_path)
+    visualize.bias_plot(bias,
+                        reshape_size=[28, 28],
+                        save_path=save_path)
 
 if __name__ == '__main__':
     main()
