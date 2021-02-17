@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from variational_autoencoder import VAE
+# from variational_autoencoder import VAE as VAE
+from variational_autoencoder_ed import VAE_ED as VAE
 
 if __name__ == '__main__':
     import sys
@@ -20,10 +21,13 @@ if __name__ == '__main__':
     train_data, train_label = train._datasets
     test_data, test_label = test._datasets
 
-    tr_std = train_data.std()
-    tr_avg = train_data.mean()
-    train_data = (train_data - tr_avg) / tr_std
-    test_data  = (test_data  - tr_avg) / tr_std
+    igd = False
+    # gauss 版は標準化(しなくてもいい)
+    if igd:
+        tr_std = train_data.std()
+        tr_avg = train_data.mean()
+        train_data = (train_data - tr_avg) / tr_std
+        test_data  = (test_data  - tr_avg) / tr_std
 
     test_data = test_data[:20]
     test_label = test_label[:20]
@@ -38,8 +42,7 @@ if __name__ == '__main__':
 
     act = 'tanh'
     out_func = ['identity', 'sigmoid'][1]
-    igd = True
-    fd = './model/vae/'
+    fd = './model/vae_ed/'
 
     # modelのセットアップ
     vae = VAE( int(train_data.shape[1]) ,hidden, act_func=act, out_func=out_func, use_BN=True, folder=fd, is_gauss_dist=igd)

@@ -16,7 +16,7 @@ class Encoder_Decoder(chainer.Chain):
         self.use_BN = use_BN
         self.act_func = act_func
         self.out_func = out_func
-        self. is_gauss_dist=is_gauss_dist
+        self.is_gauss_dist=is_gauss_dist
 
         self.makeLayers(layers,init_method)
 
@@ -135,7 +135,6 @@ class VAE(Net):
 
     # 各レイヤーの重みをプロット. 重み更新が機能してるか確認.
     def plot_weight(self, epoch):
-        
         j = 0
         fig = plt.figure(figsize=(16,8))
         for layer in self.model.children():

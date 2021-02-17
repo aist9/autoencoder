@@ -2,6 +2,7 @@
 
 ## usage
 とりあえず使うなら以下のようにする.( *argsはそれぞれ適切なものを指定する )
+
 vae = VAE(*args)
 vae.train(*args)
 feat, reconst, error = vae.reconst(*args)
@@ -40,9 +41,11 @@ feat, reconst, error = vae.reconst(data)
 
 ### 学習済みモデルのロード
 pathには学習済みモデルのディレクトリを入れる. ロードされるモデルは path+'/model.npz' となる. Noneならインスタンス生成時のパスが使用される.
+
 vae.load(path=None)
 
 ### 再学習
 vae.load(path=None)
+
 vae.train(*args)
 
