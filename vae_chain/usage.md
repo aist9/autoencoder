@@ -4,7 +4,9 @@
 とりあえず使うなら以下のようにする.( *argsはそれぞれ適切なものを指定する )
 
 vae = VAE(*args)
+
 vae.train(*args)
+
 feat, reconst, error = vae.reconst(*args)
 
 ## インスタンス生成
