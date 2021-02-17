@@ -158,7 +158,7 @@ class VAE_ED(Net):
     def plot_weight(self, epoch):
         j = 0
         fig = plt.figure(figsize=(16,8))
-        for model in [self.encoder, self.encoder]:
+        for model in [self.encoder, self.decoder]:
             for layer in model.children():
                 if 'BN' in layer.name:
                     continue
