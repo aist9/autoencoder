@@ -98,8 +98,8 @@ class Encoder_Decoder(nn.Module):
             d = self.decode_layer[i](d) if self.use_BN and not (i&1) else self.act_func(self.decode_layer[i](d))
 
         # gaussバージョンなら2出力, bernoulliバージョンなら1出力
-        d_out = ( self.out_func(self.dec_mu(d)) , self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
-        # d_out = ( self.dec_mu(d), torch.sigmoid(self.dec_var(d)) ) if self.is_gauss_dist else torch.sigmoid(self.dec_mu(d))
+        # d_out = ( self.out_func(self.dec_mu(d)) , self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
+        d_out = ( self.dec_mu(d), self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
         return d_out
 
         # gaussバージョンでの出力の活性化関数の有無について(MNISTで実験, sigmoidでのみ試行)
@@ -108,6 +108,8 @@ class Encoder_Decoder(nn.Module):
         # dec_mu, dec_var ともに有り... ロスは正の方向に減少していく. 潜在特徴でクラス判別可. 再構成可.
         # dec_mu  のみ有り          ... ロスは正の方向に増大していく. nanが出るため学習不可.
         # dec_var のみ有り          ... ロスは正の方向に減少していく. 潜在特徴でクラス判別可. 再構成可.
+        # 結論 : 入力を標準化(平均0分散1)した結果, dec_varにsigmoidをかけた場合のみ正常に機能したためこれを標準実装とする(eluやsoftplusでも良さそう？).
+        # dec_ln_varとして学習できていない？ ln_varとして学習できているなら負の値を許容できるはずだが, sigmoidで負の値を弾いているから学習が上手くいっている気がする.
 
     # 平均と分散からガウス分布を生成. 実装パクっただけなのでよくわからん. encoderはvarの代わりにln(var)を出力させる 
     def sample_z(self, mu, ln_var):
@@ -162,6 +164,8 @@ class VAE():
             else:
                 print('arg out_func is ', out_func, '. This value is not exist. This model uses identity function as activation function of output.')
                 out_func = lambda x:x
+        if out_func != torch.sigmoid:
+            print('※ out_func should be sigmoid.')
 
                 
         # 重みの初期化手法 文字列で指定されたとき関数に変換

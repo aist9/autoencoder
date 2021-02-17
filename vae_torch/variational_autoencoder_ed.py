@@ -124,8 +124,8 @@ class Decoder(nn.Module):
             d = self.decode_layer[i](d) if self.use_BN and not (i&1) else self.act_func(self.decode_layer[i](d))
 
         # gauss_distバージョンなら2出力, bernoulliバージョンなら1出力
-        d_out = ( self.out_func(self.dec_mu(d)), self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
-        # d_out = (self.dec_mu(d), self.dec_var(d)) if self.is_gauss_dist else torch.sigmoid(self.dec_mu(d))
+        # d_out = ( self.out_func(self.dec_mu(d)), self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
+        d_out = (self.dec_mu(d), self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
         return d_out
 
     def reconst_loss(self, x, dec_out):
