@@ -79,3 +79,29 @@ PyTorchで実装されたAEのファイルがあります
 
 各ファイルの中にはいくつかのクラス、関数、サンプルが書かれたmain文があります
 
+## vae_chain
+
+Chainerで実装されたVAEのファイルがあります
+
+- variational_autoencoder.py
+- variational_autoencoder_ed.py
+- vae_gaussian.py
+- vae_gaussian_ed.py
+
+ae_chainのものと実装を変更しています
+"_ed"が付いているものは, encoderとdecoderが独立しており, optimizerが個々に設定できます
+"_gaussian"が付いているものは, decoderの出力が2出力になっており, loss関数もbernoulli_nllからgaussian_nllに変更しています
+詳しくはvae_gaussian_ed.pyに書いてあります
+
+## vae_torch
+
+PyTorchで実装されたVAEのファイルがあります
+
+- variational_autoencoder.py
+- variational_autoencoder_ed.py
+- sample.py
+
+こちらもvae_chainのものと同様ですが, "_gaussian"の切り替えをそれぞれのプログラム中で行えるようにしました
+また, およそvae_chainの実装に習っていますが, こちらは"_ed"版は無印版を可能な限り継承するように実装しました
+サンプルや使用方法は"sample.py"を参考にしてください
+

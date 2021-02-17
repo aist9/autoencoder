@@ -87,16 +87,18 @@ if __name__ == '__main__':
 
 
     # 自作の潜在空間から出力を画像を確認. VAEで調べるとよく見る数字がシームレスに変化するやつ.
-    split_num = 20  # 分割数. 20より大きくするのは重いのでやめたほうがいい
+    split_num = 20  # 分割数. 出力画像のサイズは split_num*29 × split_num*29. (MNISTの縦横28+分割線1).
     rn = np.linspace(-3,3,split_num)
     x,y = np.meshgrid(rn, rn)
     dt  = np.hstack( [x.reshape(-1,1), y.reshape(-1,1)] )
     # 変換するメソッド
     imgs = vae.featuremap_to_image(dt)
-
-    for i in range(split_num**2):
-        plt.subplot(split_num,split_num,i+1) 
-        plt.imshow(imgs[i].reshape((28,28)),cmap='gray')
+    plot_image = np.ones( (split_num*29, split_num*29) )
+    for i in range(split_num):
+        for j in range(split_num):
+            plot_image[i*28+i:-~i*28+i,j*28+j:-~j*28+j] = imgs[i*split_num+j].reshape(28,28)
+    
+    plt.imshow(plot_image,cmap='gray', vmax=1, vmin=0)
     plt.show()
     
 
