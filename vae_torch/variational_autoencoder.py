@@ -102,15 +102,6 @@ class Encoder_Decoder(nn.Module):
         d_out = ( self.dec_mu(d), self.out_func(self.dec_var(d)) ) if self.is_gauss_dist else self.out_func(self.dec_mu(d))
         return d_out
 
-        # gaussバージョンでの出力の活性化関数の有無について(MNISTで実験, sigmoidでのみ試行)
-        # bernoulli分布と異なり, gaussian分布では平均・分散が0~1である必要はないはずだが, MNISTで試行するとsigmoidをかけたほうが学習がうまく行く.
-        # dec_mu, dec_var ともに無し... ロスが負の方向に増大していく. 潜在特徴や再構成の結果は上手くいかない.
-        # dec_mu, dec_var ともに有り... ロスは正の方向に減少していく. 潜在特徴でクラス判別可. 再構成可.
-        # dec_mu  のみ有り          ... ロスは正の方向に増大していく. nanが出るため学習不可.
-        # dec_var のみ有り          ... ロスは正の方向に減少していく. 潜在特徴でクラス判別可. 再構成可.
-        # 結論 : 入力を標準化(平均0分散1)した結果, dec_varにsigmoidをかけた場合のみ正常に機能したためこれを標準実装とする(eluやsoftplusでも良さそう？).
-        # dec_ln_varとして学習できていない？ ln_varとして学習できているなら負の値を許容できるはずだが, sigmoidで負の値を弾いているから学習が上手くいっている気がする.
-
     # 平均と分散からガウス分布を生成. 実装パクっただけなのでよくわからん. encoderはvarの代わりにln(var)を出力させる 
     def sample_z(self, mu, ln_var):
       epsilon = torch.randn(mu.shape).to(self.device)

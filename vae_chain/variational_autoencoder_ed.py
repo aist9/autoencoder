@@ -23,7 +23,7 @@ class Encoder(chainer.Chain):
             if init_method == 'xavier':
                 l = L.Linear(hidden[i],hidden[i+1], initialW=Xavier(hidden[i], hidden[i+1]))
             else:
-                l = L.Linear(hidden[i],hidden[i+1], initialW=init_method)
+                l = L.Linear(hidden[i],hidden[i+1], initialW=init_method() )
                 # l = L.Linear(hidden[i],hidden[i+1], initialW=chainer.initializers.HeNormal())
             self.add_link('enc{}'.format(i),l)
 
@@ -66,9 +66,10 @@ class Decoder(chainer.Chain):
         for i in range(len(hidden)-2):
             j = len(hidden)-i-1
             if init_method == 'xavier':
-                l = L.Linear(hidden[j],hidden[j-1], initialW=Xavier(hidden[i], hidden[i+1]))
+                # l = L.Linear(hidden[j],hidden[j-1], initialW=Xavier(hidden[i], hidden[i+1]))
+                l = L.Linear(hidden[j],hidden[j-1], initialW=Xavier(hidden[j], hidden[j-1]))
             else:
-                l = L.Linear(hidden[j],hidden[j-1], initialW=init_method)
+                l = L.Linear(hidden[j],hidden[j-1], initialW=init_method() )
             self.add_link('dec{}'.format(i),l)
 
             if self.use_BN and j>1:
@@ -79,8 +80,8 @@ class Decoder(chainer.Chain):
             l = L.Linear(hidden[1],hidden[0], initialW=Xavier(hidden[1] , hidden[0]))
             l_gauss = L.Linear(hidden[1],hidden[0], initialW=Xavier(hidden[1] , hidden[0]))
         else:
-            l = L.Linear(hidden[1],hidden[0], initialW=init_method)
-            l_gauss = L.Linear(hidden[1],hidden[0], initialW=init_method)
+            l = L.Linear(hidden[1],hidden[0], initialW=init_method() )
+            l_gauss = L.Linear(hidden[1],hidden[0], initialW=init_method() )
         self.add_link('dec_out1',l)
         if self.is_gauss_dist:
             self.add_link('dec_out2' , l_gauss)
@@ -129,7 +130,7 @@ class VAE_ED(Net):
         self.encoder = Encoder(hidden, act_func=act_func, use_BN=use_BN, init_method=init_method)
         self.decoder = Decoder(hidden, act_func=act_func, out_func=out_func, use_BN=use_BN, init_method=init_method, is_gauss_dist=is_gauss_dist)
 
-    def set_optimizer(self, learning_rate=0.001, gradient_momentum=0.9, weight_decay=None, gradient_clipping=None, gpu_num=0):
+    def set_optimizer(self, learning_rate=0.001, gradient_momentum=0.9, weight_decay=None, gradient_clipping=None):
         self.enc_opt = optimizers.Adam(alpha=learning_rate, beta1=gradient_momentum)
         # self.enc_opt = optimizers.Adam()
         self.enc_opt.setup(self.encoder)
@@ -165,7 +166,7 @@ class VAE_ED(Net):
                 j+=1
                 plt.subplot(2,self.weight_num,j)
                 plt.plot(cp.asnumpy(layer.W.data).reshape(-1), label=layer.name)
-                plt.legend()
+                plt.legend(loc='upper right')
         plt.tight_layout()
         plt.savefig( self.save_dir + '/weight_plot/epoch_{}.png'.format(epoch+1) )
         plt.close()
