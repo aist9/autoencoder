@@ -48,10 +48,17 @@ $ git clone https://github.com/aist9/autoencoder
 
 使いたいファイル内でimport(以下はimportの例です)
 
+ae_chain, ae_torchの場合<br>
 ```
 import autoencoder
 from autoencoder import Reconst, Autoencoder, training_autoencoder
 ```
+
+vae_chain, vae_torchの場合(詳しい使い方は vae_chain/usage.md を参照)<br>
+```
+import variational_autoencoder # or variational_autoencoder_ed
+```
+
 違う階層に置く場合は適宜パスを通す
 ```
 # "~/workspace"に存在する場合
@@ -67,12 +74,12 @@ Chainerで実装されたAEとVAEのファイルがあります
 - autoencoder.py
 - variational_autoencoder.py
 
-各ファイルの中にはいくつかのクラス、関数、サンプルが書かれたmain文があります
+各ファイルの中にはいくつかのクラス、関数、サンプルが書かれたmain文があります<br>
+"variational_autoencoder.py"は"autoencoder.py"と同様に使えますが, 古い実装なので更新しません. vae_chainかvae_torchのものを使用してください
 
 ## ae_torch
 
-PyTorchで実装されたAEのファイルがあります
-
+PyTorchで実装されたAEのファイルがあります<br>
 現在 ae_chain/autoencoder.py から移植している段階です
 
 - autoencoder.py
@@ -85,13 +92,10 @@ Chainerで実装されたVAEのファイルがあります
 
 - variational_autoencoder.py
 - variational_autoencoder_ed.py
-- vae_gaussian.py
-- vae_gaussian_ed.py
 
-ae_chainのものと実装を変更しています
-"_ed"が付いているものは, encoderとdecoderが独立しており, optimizerが個々に設定できます
-"_gaussian"が付いているものは, decoderの出力が2出力になっており, loss関数もbernoulli_nllからgaussian_nllに変更しています
-詳しくはvae_gaussian_ed.pyに書いてあります
+ae_chainのものと実装を変更しています<br>
+"_ed"が付いているものは, encoderとdecoderが独立しており, optimizerが個々に設定できます<br>
+サンプルや使用方法は"sample.py"と"usage.md"を参考にしてください<br>
 
 ## vae_torch
 
@@ -101,7 +105,6 @@ PyTorchで実装されたVAEのファイルがあります
 - variational_autoencoder_ed.py
 - sample.py
 
-こちらもvae_chainのものと同様ですが, "_gaussian"の切り替えをそれぞれのプログラム中で行えるようにしました
-また, およそvae_chainの実装に習っていますが, こちらは"_ed"版は無印版を可能な限り継承するように実装しました
-サンプルや使用方法は"sample.py"を参考にしてください
+こちらもvae_chainのものと同様です<br>
+サンプルや使用方法は"sample.py"を参考にしてください<br>
 

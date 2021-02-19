@@ -23,8 +23,8 @@ class Encoder_Decoder(chainer.Chain):
 
     def makeLayers(self,hidden, init_method):
         for i in range(len(hidden)-2):
-            init_func = Xavier(hidden[i], hidden[i+1]) if init_method=='xavier' else init_method
-            l = L.Linear(hidden[i],hidden[i+1], init_func)
+            init_func = Xavier(hidden[i], hidden[i+1]) if init_method=='xavier' else init_method()
+            l = L.Linear(hidden[i],hidden[i+1], initialW=init_func)
             name  = 'enc{}'.format(i)
             self.add_link(name,l)
             if self.use_BN:
@@ -33,6 +33,7 @@ class Encoder_Decoder(chainer.Chain):
                 self.add_link(name,l)
 
             j = len(hidden)-i-1
+            init_func = Xavier(hidden[j], hidden[j-1]) if init_method=='xavier' else init_method()
             l = L.Linear(hidden[j],hidden[j-1], initialW=init_func)
             name  = 'dec{}'.format(i)
             self.add_link(name,l)
@@ -50,11 +51,11 @@ class Encoder_Decoder(chainer.Chain):
             if self.is_gauss_dist:
                 self.add_link('dec_out2' ,L.Linear(hidden[1],hidden[0],  initialW=Xavier(hidden[1] , hidden[0] )))
         else:
-            self.add_link('enc_mu' ,L.Linear(hidden[-2],hidden[-1], initialW=init_method))
-            self.add_link('enc_var',L.Linear(hidden[-2],hidden[-1], initialW=init_method))
-            self.add_link('dec_out1' ,L.Linear(hidden[1],hidden[0],  initialW=init_method))
+            self.add_link('enc_mu'  ,L.Linear(hidden[-2],hidden[-1], initialW=init_method() ))
+            self.add_link('enc_var' ,L.Linear(hidden[-2],hidden[-1], initialW=init_method() ))
+            self.add_link('dec_out1',L.Linear(hidden[1], hidden[0],  initialW=init_method() ))
             if self.is_gauss_dist:
-                self.add_link('dec_out2' ,L.Linear(hidden[1],hidden[0],  initialW=init_method))
+                self.add_link('dec_out2' ,L.Linear(hidden[1],hidden[0],  initialW=init_method() ))
 
         
     def __call__(self, x):
@@ -143,8 +144,8 @@ class VAE(Net):
             j+=1
             plt.subplot(2,self.weight_num,j)
             plt.plot(cp.asnumpy(layer.W.data).reshape(-1), label=layer.name)
-            plt.legend()
-
+            plt.legend(loc='upper right')
+        plt.tight_layout()
         plt.savefig( self.save_dir + '/weight_plot/epoch_{}.png'.format(epoch+1) )
         plt.close()
 
