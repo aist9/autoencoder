@@ -1,9 +1,8 @@
 import os 
-import sys
 import numpy as np
+import matplotlib.pyplot as plt
 
 import json
-import math
 
 # pytorch
 import torch
@@ -17,343 +16,354 @@ from ignite.utils import convert_tensor
 from ignite.contrib.handlers.tensorboard_logger import *
 
 # **********************************************
-# autoencoder class
+# AutoEncoder model
 # **********************************************
-class Autoencoder(nn.Module):
-    def __init__(self, inputs, hidden, fe='sigmoid', fd='sigmoid'):
-        super(Autoencoder, self).__init__()
-        self.le = nn.Linear(inputs, hidden)
-        self.ld = nn.Linear(hidden, inputs)
+class Encoder_Decoder(nn.Module):
 
-        self.fe = fe
-        self.fd = fd
+    def __init__(self, layers, act_func=torch.tanh, out_func=torch.sigmoid,
+                use_BN=False, init_method=nn.init.xavier_uniform_,
+                is_gauss_dist=False ,device='cuda'):
 
-    # Forward
-    def __call__(self, x, hidden_out=False):
-        h = self.encoder(x)
-        y = self.decoder(h)
-        if hidden_out == False:
-            return y
+        super().__init__()
+
+        self.use_BN = use_BN
+        self.act_func = act_func
+        self.out_func = out_func
+        self.is_gauss_dist = is_gauss_dist
+        self.device = device
+        self._makeLayers(layers, init_method)
+
+    def _makeLayers(self, hidden, init_method):
+
+        encode_layer = []
+        decode_layer = []
+
+        e = nn.Linear(hidden[0], hidden[1])
+        d = nn.Linear(hidden[1], hidden[0])        
+
+        init_method(e.weight)
+        init_method(d.weight)
+
+        encode_layer.append(e)
+        decode_layer.append(d)
+
+        if self.use_BN:
+            e = nn.BatchNorm1d(hidden[1])
+            d = nn.BatchNorm1d(hidden[0])
+
+            encode_layer.append(e)
+            decode_layer.append(d)
+        
+        
+        self.encode_layer = nn.ModuleList(encode_layer)
+        self.decode_layer = nn.ModuleList(decode_layer)
+        
+    def __call__(self, x): 
+        h = self.encode(x)
+        d_out = self.decode(h)
+        return h, d_out
+
+
+    def encode(self, x):
+        e = x
+        for i in range(len(self.encode_layer)):
+            e = self.encode_layer[i](e) if self.use_BN and not (i & 1) \
+                else self.act_func(self.encode_layer[i](e))
+        return e
+
+    def decode(self, h):
+        d_out = h
+        for i in range(len(self.decode_layer)):
+            d_out = self.decode_layer[i](d_out) if self.use_BN and not (i & 1) \
+                else self.act_func(self.decode_layer[i](d_out))
+        return d_out
+        
+
+    def reconst_loss(self, x, dec_out):
+        reconst = F.mse_loss(x, dec_out)
+        return reconst
+
+
+# **********************************************
+# Autoencoder class
+# **********************************************
+class AE():
+    #def __init__(self, inputs, hidden, fe='sigmoid', fd='sigmoid'):
+    def __init__(self, input_shape, hidden, act_func=torch.tanh,
+                 out_func=torch.sigmoid, use_BN=False, init_method='xavier',
+                 folder='./model', is_gauss_dist=False, device='cuda'):
+
+        activations = {
+                "sigmoid"   : torch.sigmoid, \
+                "tanh"      : torch.tanh,    \
+                "softplus"  : F.softplus,    \
+                "relu"      : torch.relu,    \
+                "leaky"     : F.leaky_relu,  \
+                "elu"       : F.elu,         \
+                "identity"  : lambda x:x     \
+        }
+        
+        self.device = device
+
+        # Specify the activation function
+        if isinstance(act_func, str):
+            if act_func in activations.keys():
+                act_func = activations[act_func]
+            else:
+                print('arg act_func is ', act_func, '. This value is not exist. \
+                      This model uses identity function as activation function.')
+                act_func = lambda x: x
+        
+        if isinstance(out_func, str):
+            if out_func in activations.keys():
+                out_func = activations[out_func]
+            else:
+                print('arg out_func is ', out_func, '. This value is not exist. \
+                      This model uses identity function as activation function.')
+                out_func = lambda x: x
+        
+        if out_func != torch.sigmoid:
+            print('※ out_func should be sigmoid.')
+
+
+        # Specify the initialization method
+        if isinstance(init_method, str):
+            inits = {
+                    "xavier"    : nn.init.xavier_uniform_, \
+                    "henormal"  : nn.init.kaiming_uniform_ \
+            }
+            if init_method in inits.keys():
+                init_method = inits[init_method]
+            else:
+                init_method = nn.init.xavier_uniform_
+                print('init_method is xavier initializer')
+
+
+        if not isinstance(hidden, list):
+            hidden = [hidden]
+        hidden = [input_shape] + hidden
+
+        print('layer' + str(hidden))
+
+        # A path for saving a trained model
+        self.save_dir  = os.path.join(folder, '{}'.format(hidden))
+        os.makedirs(self.save_dir, exist_ok=True)
+        os.makedirs(self.save_dir+'/weight_plot', exist_ok=True)
+
+        self.is_gauss_dist = is_gauss_dist
+        self.set_model(hidden, act_func, out_func, use_BN, init_method, is_gauss_dist=is_gauss_dist, device=self.device)
+        self.set_optimizer()
+
+        # Number of weights used in weight_plot function
+        self.weight_num = len(hidden) + 1
+
+    def __call__(self, x):
+        return self.model(x)
+        
+     # train
+    def train(self,train,epoch,batch,C=1.0, k=1, valid=None, is_plot_weight=False):
+
+        if valid is None:
+            print('epoch\tloss\t\treconst\t\tMSE')
         else:
-            return y, h
+            print('epoch\tloss\t\treconst\t\tMSE\t\tvalid_MSE')
 
-    # Encoder
-    def encoder(self, x):
-        h = self.le(x)
-        if self.fe is not None:
-            h = self.activation_function(h, self.fe)
-        return h
+
+        # conversion data
+        train_data = torch.Tensor(train)
+        dataset = torch.utils.data.TensorDataset(train_data, train_data)
+        train_loader = DataLoader(dataset, batch_size=batch, shuffle=True)
+
+        # trainer
+        trainer = self.trainer(C=C,k=k, device=self.device)
+
+        # log variables init.
+        log = []
+        rec_loss_iter = []
+
+        # executed function per iter
+        @trainer.on(Events.ITERATION_COMPLETED)
+        def add_loss(engine):
+            rec_loss_iter.append(engine.state.output)                        
         
-    # Decoder
-    def decoder(self, h):
-        y = self.ld(h)
-        if self.fd is not None:
-            y = self.activation_function(y, self.fd) 
-        return y
-    
-    # Activation function
-    def activation_function(self, data, func): 
-        if func == 'tanh':
-            data = torch.tanh(data)
-        elif func == 'sigmoid':
-            data = torch.sigmoid(data)
-        elif func == 'relu':
-            data = torch.relu(data)
-        return data
+        # executed function per epoch
+        @trainer.on(Events.EPOCH_COMPLETED)
+        def log_report(engine):
+            epoch = engine.state.epoch            
+            rec_loss = np.mean(rec_loss_iter)
+            log.append({'epoch':epoch, 'reconst':rec_loss})
+            if epoch % 10 == 0 or epoch==1:
+                perm = np.random.permutation(len(train))[:batch]
+                mse = self.MSE(train[perm]).mean()
+                if valid is None:
+                    print(f'{epoch}\t{rec_loss:.6f}\t{mse:.6f}')
+                else:
+                    val_mse = self.MSE(valid).mean()
+                    print(f'{epoch}\t{rec_loss:.6f}\t{mse:.6f}\t{val_mse:.6f}')
 
-# **********************************************
-# Loss function
-# **********************************************
-class LossFunction(object):
-    def __init__(self, ae_method=None, rho=0.05, s=0.001):
-        # calculation setting
-        self.ae_method = ae_method
-        self.rho = rho 
-        self.s = s
+                if is_plot_weight: # output layer weight.
+                    self.plot_weight(epoch)
+            
+            rec_loss_iter.clear()            
 
-    # calculate loss
-    def __call__(self, y, h, t):
-        # mse loss
-        loss = F.mse_loss(y, t)
+        # start training
+        trainer.run(train_loader, max_epochs=epoch)
 
-        # For sparse AE
-        if self.ae_method == 'sparse':
-            if 0 < self.s:
-                kld = self.reg_sparse(h)
-                loss += self.s * kld
-
-        return loss
-
-    # sparse regularization term
-    def reg_sparse(self, h):
-        rho_hat = torch.sum(h, axis=0) / h.shape[0]
-        kld = torch.sum(self.rho * torch.log(self.rho / rho_hat) + \
-                    (1 - self.rho) * torch.log((1 - self.rho) / (1 - rho_hat)))
-        return kld
-
-# **********************************************
-# Trainer Wrraper
-# **********************************************
-def nn_trainer(
-        model, optimizer, loss_function, device=None):
-
-    if device:
-        model.to(device)
-
-    def prepare_batch(batch, device=None):
-        x, y = batch
-        return (convert_tensor(x, device=device),
-                convert_tensor(y, device=device))
-
-    def _update(engine, batch):
-        optimizer.zero_grad()
-        x, t = prepare_batch(batch, device=device)
-        y, h = model(x, hidden_out=True)
-        loss = loss_function(y, h, t)
-        loss.backward()
-        optimizer.step()
-        return loss.item()
-
-    return Engine(_update)
-
-# **********************************************
-# Training autoencoder by trainer
-# **********************************************
-def training_autoencoder(
-        data, hidden, max_epoch, batchsize,
-        fe='sigmoid', fd='sigmoid',
-        ae_method=None, rho=0.05, s=0.001,
-        out_dir='result'):
-
-    # gpu setting
-    device = 'cpu'
-    if torch.cuda.is_available():
-        device = 'cuda'
-    
-    # input size
-    inputs = data.shape[1]
-    
-    # conversion data
-    train_data = torch.Tensor(data)
-    dataset = torch.utils.data.TensorDataset(train_data, train_data)
-    train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
-
-    # Define the autoencoder model
-    model = Autoencoder(inputs, hidden)
-    opt = optim.Adam(model.parameters())
-
-    # loss function
-    loss_function = LossFunction(ae_method=ae_method, rho=rho, s=s)
-
-    # trainer
-    trainer = nn_trainer(model, opt, loss_function, device=device)
-
-    # log variables init.
-    log = []
-    loss_iter = []
-
-    # add loss (each iter.)
-    @trainer.on(Events.ITERATION_COMPLETED)
-    def add_loss(engine):
-        loss_iter.append(engine.state.output)
+        # save model weight
+        self.save_model()
         
-    # print loss value (each epoch)
-    @trainer.on(Events.EPOCH_COMPLETED)
-    def log_report(engine):
-        epoch = engine.state.epoch
-        loss = sum(loss_iter) / len(loss_iter)
-        log.append({'epoch':epoch,'loss':loss})
-        if engine.state.epoch == 1:
-            print('epoch\t\tloss')
-        print(f'{epoch}\t\t{loss:.10f}')
-        loss_iter.clear()
-
-    # start training
-    trainer.run(train_loader, max_epochs=max_epoch)
+        # log output
+        file_path = os.path.join(self.save_dir, 'log')
+        file_ = open(file_path, 'w')
+        json.dump(log, file_, indent=4)
     
-    # log output
-    file_path = os.path.join(out_dir, 'log')
-    file_ = open(file_path, 'w')
-    json.dump(log, file_, indent=4)
 
-    # gpu -> cpu
-    if device is not 'cpu':
-        model.to('cpu')
+    def trainer(self, C=1.0, k=1, device=None):
 
-    return model
+        self.model_to(device)
 
-# **********************************************
-# Sample: training MNIST by autoencoder
-# **********************************************
-def main():
+        def prepare_batch(batch, device=None):
+            x, y = batch
+            return (convert_tensor(x, device=device),
+                    convert_tensor(y, device=device))
+
+        def _update(engine, batch):
+            self.zero_grad()
+            x, y = prepare_batch(batch, device=device)
+            h = self.encode(x)                            
+            
+            reconst_loss = 0
+
+            for l in range(k):                
+                d_out = self.decode(h)
+                reconst_loss += self.reconst_loss(y, d_out) / float(k)
+            loss = reconst_loss
+            loss.backward()
+            self.grad_clip()
+            self.step()
+            return loss.item()
  
-    # -------------------------------------
-    # 設定
-    # -------------------------------------
+        return Engine(_update)   
 
-    # コマンドライン引数を読み込み
-    # 引数が'-1'なら学習しない
-    args = sys.argv
-    train_mode = True 
-    if 2 <= len(args):
-        if args[1] == '-1':
-            train_mode = False
+
+    # For overriding to omit writing code for inheritance
+    def encode(self, x):
+        return self.model.encode(x)
     
-    # 出力先のフォルダを生成
-    save_dir = '../output/result_ae_torch'
-    os.makedirs(save_dir, exist_ok=True)
+    def decode(self, z):
+        return self.model.decode(z)
+    
+    def reconst_loss(self, x, d_out):
+        return self.model.reconst_loss(x, d_out)
+    
+    def set_model(self, hidden, act_func, out_func, use_BN, init_method,
+                 is_gauss_dist, device):
+        self.model = Encoder_Decoder(hidden, act_func, out_func, use_BN,
+                     init_method, is_gauss_dist=is_gauss_dist, device=device)
+    
+    def set_optimizer(self, learning_rate=0.001, beta1=0.9, beta2=0.999,
+                      weight_decay=0, gradient_clipping=None):
+        betas=(beta1, beta2)
+        self.opt = optim.Adam(self.model.parameters(), lr=learning_rate,
+                              betas=betas, eps=1e-08, weight_decay=weight_decay,
+                              amsgrad=False)        
+        self.gradient_clipping = gradient_clipping
 
-    # モデルの保存パス
-    model_path = os.path.join(save_dir, 'autoencoder_torch')
+    def model_to(self, device):
+        self.model.to(device)
+    
+    def zero_grad(self):
+        self.opt.zero_grad()
+    
+    def step(self):
+        self.opt.step()
 
-    # -------------------------------------
-    # データの準備
-    # -------------------------------------
+    def grad_clip(self):
+        if self.gradient_clipping is not None:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(),
+                                           self.gradient_clipping)
 
-    # 指定した数字データを抜くための変数
-    number = 0
 
-    from torchvision.datasets import MNIST
-    import torchvision.transforms as transforms
+    # 各レイヤーの重みをプロット. 重み更新が機能してるか確認.
+    def plot_weight(self, epoch):
+        dic = self.model.state_dict()
 
-    dataset = []
-    labels = []
-    for i in range(2):
-        if i == 0:
-            is_train = True
-            num_data = 60000
-        else:
-            is_train = False
-            num_data = 10000
+        fig = plt.figure(figsize=(16,8))
+        plot_num = 0
+        for k in dic.keys():
+            if 'weight' in k:
+                plot_num += 1
+                plot_data = self.tensor_to_np(dic[k]).reshape(-1)
+                plt.subplot(2,self.weight_num,plot_num)
+                plt.plot(plot_data, label=k)
+                plt.legend()
+        plt.tight_layout()
         
-        # Load MNIST
-        mnist = MNIST(
-                '../data', train=is_train,
-                download=True, transform=transforms.ToTensor())
+        plt.close()
 
-        # convert to DataLoder
-        data_loader = DataLoader(
-                mnist, batch_size=num_data, shuffle=False)
-        # convert to iter
-        data_iter = iter(data_loader)
-        # data and label extraction
-        data, label = data_iter.next()
-        # convert to numpy
-        data = data.numpy()
-        label = np.asarray(label.numpy(), dtype='int32')
+    # modelの保存. trainメソッドの最後に呼び出される.
+    def save_model(self, path=None):
+        path = self.save_dir if path is None else path
+        torch.save(self.model.state_dict(), path+'/model.pth')
 
-        # reshape data size: number of data times 784
-        size = data.shape
-        data = data.reshape([size[0], size[2] * size[3]])
+    # modelのロード. 学習済みモデルを使用したい場合に呼び出す.
+    def load_model(self, path=None):
+        path = self.save_dir if path is None else path
+        param = torch.load( path + '/model.pth')
+        self.model.load_state_dict(param)
+        self.model.to(self.device)
 
-        dataset.append(data)
-        labels.append(label)
+    # evalモードに切り替え
+    def model_to_eval(self):
+        self.model.eval()
 
-    train_data = dataset[0]
-    train_label = labels[0]
-    test_data = dataset[1]
-    test_label = labels[1]
+    def reconst(self, data, unregular=False):
+    # かきかえ
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if not isinstance(data, torch.Tensor):
+            data = self.np_to_tensor(data)
 
-    # 特定の番号のみ抽出
-    train_data = train_data[train_label==number]
-    train_label = train_label[train_label==number]
+        h = self.encode(data)
+        d_out = self.decode(h)
 
-    # -------------------------------------
-    # 学習の準備
-    # -------------------------------------
+        rec = d_out[0] 
+        mse = torch.mean((rec - data) ** 2, dim=1)
 
-    # エポック
-    epoch = 100
-    # ミニバッチサイズ
-    batchsize = 50
-    # 隠れ層のユニット数
-    hidden = 10
+        h = self.tensor_to_np(h)
+        rec = self.tensor_to_np(rec)
+        mse = self.tensor_to_np(mse)
 
-    # -------------------------------------
-    # AutoEncoderの学習
-    # -------------------------------------
+        return h, rec, mse
 
-    # コマンドライン引数が'-1'の場合学習しない
-    if train_mode is True:
-        # Autoencoderの学習
-        model = training_autoencoder(
-                train_data, hidden, epoch, batchsize,
-                out_dir=save_dir)
-        # モデルの保存
-        torch.save(model.state_dict(), model_path)
-    else:
-        # 保存したモデルから読み込み
-        model = Autoencoder(784, hidden)
-        param = torch.load(model_path)
-        model.load_state_dict(param)
+        # Calcurate Mean square error
 
-    # -------------------------------------
-    # 再構成
-    # -------------------------------------
+    def MSE(self, data):
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if not isinstance(data, torch.Tensor):
+            data = self.np_to_tensor(data)
 
-    y = model(torch.Tensor(test_data))
-    y.to('cpu')
-    reconst_test = y.detach().clone().numpy()
+        e, d_out = self(data)
+        rec = d_out[0] if self.is_gauss_dist else d_out
+        mse = torch.mean((rec - data) ** 2, dim=1)
+        return self.tensor_to_np(mse)
 
-    # -------------------------------------
-    # 可視化
-    # -------------------------------------
-    
-    # matplotlib
-    import matplotlib.pyplot as plt
+    def featuremap_to_image(self, feat):
+        if feat.ndim == 1:
+            feat = feat.reshape(1, -1)
+        if not isinstance(feat, torch.Tensor):
+            feat = self.np_to_tensor(feat)
 
-    # 可視化を行う関数のimport 
-    sys.path.append('../visualize')
-    import visualize
-    
-    # 保存先ディレクトリの生成
-    save_dir = os.path.join(save_dir, 'img_torch')
-    os.makedirs(save_dir, exist_ok=True)
+        d_out = self.decode(feat)
+        d_out = d_out[0] if self.is_gauss_dist else d_out
+        return self.tensor_to_np(d_out)
 
-    # 1次元に並んだデータをreshapeするサイズ
-    reshape_size = [28, 28]
-    for (save_name, dataset) in zip(
-            ['input', 'reconst'], [test_data, reconst_test]):
-        # 入出力をplot
-        for i, d in enumerate(dataset):
-            save_path = os.path.join(
-                    save_dir,
-                    '_'.join([save_name, str(i+1)]) + '.png')
-            d = d.reshape(reshape_size)
-            plt.imshow(d, cmap='gray')
-            plt.savefig(save_path)
-            if i+1 == 10:
-                break
+    # ndarray -> torch.Tensor
+    def np_to_tensor(self, data):
+        return torch.Tensor(data).to(self.device)
 
-    # パラメータの抽出
-    param = model.state_dict()
-
-    # Encoderの重み
-    weight = param['le.weight'].clone().numpy()
-    # encoderの重みを可視化
-    save_path = os.path.join(save_dir, 'encoder_weight.png')
-    visualize.weight_plot(weight,
-                          hidden,
-                          reshape_size=[28, 28],
-                          save_path=save_path)
-    
-    # Decoderの重み(転置が必要)
-    weight = param['ld.weight'].clone().numpy().T
-    # decoderの重みを可視化
-    save_path = os.path.join(save_dir, 'decoder_weight.png')
-    visualize.weight_plot(weight,
-                          hidden,
-                          reshape_size=[28, 28],
-                          save_path=save_path)
-
-    # バイアスの抽出
-    bias = param['ld.bias'].clone().numpy().T
-    # decoedrのバイアスを可視化
-    save_path = os.path.join(save_dir, 'decoder_bias.png')
-    visualize.bias_plot(bias,
-                        reshape_size=[28, 28],
-                        save_path=save_path)
-
-if __name__ == '__main__':
-    main()
+    # torch.Tensor -> ndarray
+    def tensor_to_np(self, data):
+        return data.detach().to('cpu').numpy()
 
