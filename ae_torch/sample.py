@@ -13,10 +13,9 @@ def comp_reconst(reconst, orig):
     plt.show()                                       
 
 def plot_reconsts(reconst):
-    for i in range(1, 122):
-        plt.subplot(11, 11, i)
-        plt.imshow(reconst[i - 1].reshape(28, 28))
-
+    for i in range(0, 121):
+        plt.subplot(11, 11, i + 1)
+        plt.imshow(reconst[i].reshape(28, 28))
         plt.gray()
     plt.show()
 
@@ -53,13 +52,15 @@ if __name__ == '__main__':
 
     act_func = 'tanh'    # 活性化関数
     out_func = 'sigmoid' # 出力層の活性化関数 (デコーダの出力層, 無印版は必ずsigmoid)
-    use_BN   = True      # Batch Normalization を使うか否か
+    use_BN   = False      # Batch Normalization を使うか否か
 
     fd = './model/torch/'
 
     # modelのセットアップ
     from autoencoder import AE
-    ae = AE( int(train_data.shape[1]) ,hidden, act_func=act_func, out_func=out_func ,use_BN=use_BN, folder=fd, device='cuda', is_gauss_dist=True)
+    ae = AE(int(train_data.shape[1]), hidden, act_func=act_func,
+            out_func=out_func, use_BN=use_BN, folder=fd, device='cuda')
+            
 
     # ed版はこちら. 無印版とは名前が違うだけ.
     # from variational_autoencoder_ed import VAE_ED

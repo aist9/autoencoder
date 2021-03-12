@@ -23,14 +23,14 @@ log2pi = float(np.log(2*np.pi))
 
 #Variational AutoEncoder model
 class Encoder_Decoder(nn.Module):
-    def __init__(self, layers, act_func=torch.tanh, out_func=torch.sigmoid, use_BN=False, init_method=nn.init.xavier_uniform_, is_gauss_dist=False ,device='cuda'):
+    def __init__(self, layers, act_func=torch.tanh, out_func=torch.sigmoid,
+                 use_BN=False, init_method=nn.init.xavier_uniform_,
+                 device='cuda'):                             
         super(Encoder_Decoder, self).__init__()
         self.use_BN = use_BN
         self.act_func = act_func
-        self.out_func = out_func
-        self.is_gauss_dist = is_gauss_dist
+        self.out_func = out_func        
         self.device = device
-
         self._makeLayers(layers,init_method)
 
     def _makeLayers(self,hidden, init_method):
@@ -224,9 +224,8 @@ class AE():
         self.save_dir  = os.path.join(folder, '{}'.format(hidden))
         os.makedirs(self.save_dir, exist_ok=True)
         os.makedirs(self.save_dir+'/weight_plot', exist_ok=True)
-
-        self.is_gauss_dist = is_gauss_dist
-        self.set_model(hidden, act_func, out_func, use_BN, init_method, is_gauss_dist=is_gauss_dist, device=self.device)
+        
+        self.set_model(hidden, act_func, out_func, use_BN, init_method, device=self.device)
         self.set_optimizer()
 
         # encoderの重みの数. weight_plotで使用.
@@ -384,8 +383,8 @@ class AE():
     def reconst_loss(self, x, d_out):
         return self.model.reconst_loss(x, d_out)
 
-    def set_model(self, hidden, act_func, out_func, use_BN, init_method, is_gauss_dist, device):
-        self.model = Encoder_Decoder(hidden, act_func, out_func, use_BN, init_method, is_gauss_dist=is_gauss_dist, device=device)
+    def set_model(self, hidden, act_func, out_func, use_BN, init_method, device):
+        self.model = Encoder_Decoder(hidden, act_func, out_func, use_BN, init_method, device=device)
 
     def set_optimizer(self, learning_rate=0.001, beta1=0.9, beta2=0.999, weight_decay=0, gradient_clipping=None):
         betas=(beta1, beta2)
@@ -488,10 +487,9 @@ class AE():
         if data.ndim == 1:
             data = data.reshape(1,-1)
         if not isinstance(data, torch.Tensor):
-            data = self.np_to_tensor(data)
-
+            data = self.np_to_tensor(data)        
         e, d_out = self(data)
-        rec = d_out[0] if self.is_gauss_dist else d_out
+        rec = d_out
         mse = torch.mean( (rec-data)**2, dim=1 )
         return self.tensor_to_np(mse)
     """
