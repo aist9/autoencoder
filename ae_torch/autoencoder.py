@@ -21,7 +21,7 @@ from ignite.contrib.handlers.tensorboard_logger import *
 log2pi = float(np.log(2*np.pi))
 
 
-#Variational AutoEncoder model
+# AutoEncoder model
 class Encoder_Decoder(nn.Module):
     def __init__(self, layers, act_func=torch.tanh, out_func=torch.sigmoid,
                  use_BN=False, init_method=nn.init.xavier_uniform_,
@@ -167,8 +167,26 @@ class Encoder_Decoder(nn.Module):
 
 
 class AE():
-    def __init__(self, input_shape, hidden, act_func=torch.tanh, out_func=torch.sigmoid, use_BN=False, init_method='xavier', folder='./model', is_gauss_dist=False, device='cuda'):
+    def __init__(self, input_shape, hidden, act_func=torch.tanh,
+                 out_func=torch.sigmoid, use_BN=False, init_method='xavier',
+                 folder='./model', is_gauss_dist=False, device='cuda'):
 
+        """
+        Parameters:
+        -----------
+
+        - input_shape (integer): The number of dimension of input data.
+        - hidden (list): The number of unit in hidden layers. This list should consist of integer. 
+        - act_func (function, optional): The activation function of an input layer. The default function is torch.tanh.
+        - out_func (function, optional): The activation function of an output layer. The default function is torch.sigmoid. 
+        - use_BN (bool, optional): If ``True``, the batch normalization will be enable. Defaults to ``False``.
+        - init_method (string, optional): Methods to initialization of weights.
+        - folder (string, optional): The name of output folder of ~~~.
+        - is_gauss_dist (bool, optional): If ``True``
+        - device (string, optional): "cpu" or "gpu"
+
+
+        """
         activations = {
                 "sigmoid"   : torch.sigmoid, \
                 "tanh"      : torch.tanh,    \
