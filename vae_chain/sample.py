@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# from variational_autoencoder import VAE as VAE
-from variational_autoencoder_ed import VAE_ED as VAE
+from variational_autoencoder import VAE as VAE
+# from variational_autoencoder_ed import VAE_ED as VAE
 
 if __name__ == '__main__':
     import sys
@@ -42,23 +42,23 @@ if __name__ == '__main__':
 
     act = 'tanh'
     out_func = ['identity', 'sigmoid'][1]
-    fd = './model/vae_ed/'
+    fd = './model/vae_ed'
 
     # modelのセットアップ
     vae = VAE( int(train_data.shape[1]) ,hidden, act_func=act, out_func=out_func, use_BN=True, folder=fd, is_gauss_dist=igd)
     # VAEの学習
     if train_mode == 'train':
-        vae.train(train_data, epoch, batchsize, k=1, gpu_num=0, valid=None, is_plot_weight=True)
+        vae.train(train_data, epoch, batchsize, C=1.0, k=1, gpu_num=0, valid=None, is_plot_weight=True)
     if train_mode == 'retrain':
         vae.load_model()
-        vae.train(train_data, epoch, batchsize, k=1, gpu_num=0, valid=None, is_plot_weight=True)
+        vae.train(train_data, epoch, batchsize, C=1.0, k=1, gpu_num=0, valid=None, is_plot_weight=True)
     else:
         vae.load_model()
 
     # 再構成
-    feat_train, reconst_train, err_train = vae.reconst(train_data)
-    feat_test,  reconst_test,  err_test  = vae.reconst(test_data)
-
+    feat_train, reconst_train, err_train = vae.reconst(train_data, unregular=True)
+    feat_test,  reconst_test,  err_test  = vae.reconst(test_data,  unregular=True)
+    print(err_train.shape)
 
     plt.plot(reconst_train[0])
     plt.plot(train_data[0])
@@ -87,4 +87,27 @@ if __name__ == '__main__':
     plt.imshow(plot_image,cmap='gray', vmax=plot_image.max(), vmin=plot_image.min())
     plt.show()
     
+
+    split_num = 20  # 分割数. 出力画像のサイズは split_num*29 × split_num*29. (MNISTの縦横28+分割線1)
+    rn = np.linspace(-3,3,split_num)
+    x,y = np.meshgrid(rn, rn)
+    dt  = np.hstack( [x.reshape(-1,1), y.reshape(-1,1)] ).astype(np.float32)
+
+    imgs = err_train
+    plot_image = np.ones( (split_num*29, split_num*29) ).astype(np.float)
+
+    for i in range(split_num):
+        for j in range(split_num):
+            # plot_image[i*28+i:-~i*28+i,j*28+j:-~j*28+j] = imgs[i*split_num+j].reshape(28,28)
+            plt.subplot(131)
+            plt.imshow(train_data[i*split_num+j].reshape(28,28),cmap='gray', vmax=1.0, vmin=0.0)
+            plt.subplot(132)
+            plt.imshow(reconst_train[i*split_num+j].reshape(28,28),cmap='gray', vmax=1.0, vmin=0.0)
+            plt.subplot(133)
+            plt.imshow(imgs[i*split_num+j].reshape(28,28),cmap='jet')
+            plt.savefig('./images/{}.png'.format(i*split_num+j))
+            plt.close()
+    # plt.imshow(plot_image,cmap='jet', vmax=plot_image.max(), vmin=plot_image.min())
+    plt.show()
+
 

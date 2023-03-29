@@ -62,6 +62,52 @@ class Autoencoder(Chain):
         return y
     
 
+'''
+class Convolutional_Autoencoder(Chain):
+    def __init__(self, input_dim, inputs, hidden, ksize=3, enc_func=F.relu, dec_func=F.relu, is_use_linear=False, use_BN=False, init_method=''):
+        super(Autoencoder, self).__init__()
+        with self.init_scope():
+            self.le = L.ConvolutionND(input_dim, inputs, hidden, ksize=ksize)
+            self.ld = L.DeConvolutionND(input_dim, hidden, input_channel, ksize=ksize)
+            if use_BN:
+                self.be = L.BatchNormalization(hidden)
+                self.bd = L.BatchNormalization(inputs)
+
+        # 活性化関数の指定
+        self.fe = enc_func
+        self.fd = dec_func
+
+        self.use_BN = use_BN
+
+
+    # Forward
+    # hidden_out=Trueにすると隠れ層出力もreturn
+    def __call__(self, x, hidden_out=False):
+        h = self.encoder(x)
+        y = self.decoder(h)
+        if hidden_out == False:
+            return y
+        else:
+            return y, h
+
+    # Encoder
+    def encoder(self, x):
+        h = self.le(x)
+        if self.use_BN:
+            h = self.be(h)
+        if self.fe is not None:
+            h = self.fe(h)
+        return h
+        
+    # Decoder
+    def decoder(self, h):
+        y = self.ld(h)
+        if self.use_BN:
+            y = self.bd(y)
+        if self.fd is not None:
+            y = self.fd(y) 
+        return y
+'''
 
 class AE():
     def __init__(self, input_shape, hidden, enc_func=F.sigmoid, dec_func=F.sigmoid ,use_BN=False, init_method='henormal', folder='./model', rho=None, s=None):
@@ -72,6 +118,10 @@ class AE():
             self.rho = rho
             self.s = s
 
+        def swish(x):
+            beta = np.ones(x.shape[1], dtype=np.float32) if isinstance(x.data ,np.ndarray) else cp.ones(x.shape[1], dtype=cp.float32)
+            return F.swish(x, beta)
+
         activations = {
                 "sigmoid"   : F.sigmoid,    \
                 "tanh"      : F.tanh,       \
@@ -79,6 +129,7 @@ class AE():
                 "relu"      : F.relu,       \
                 "leaky"     : F.leaky_relu, \
                 "elu"       : F.elu,        \
+                "swish"     : swish,        \
                 "identity"  : lambda x:x    \
         }
         if isinstance(enc_func, str): # 文字列で指定されたとき関数に変換
@@ -119,7 +170,8 @@ class AE():
         self.model_name = "{}-{}.npz".format(input_shape, hidden)
 
         self.model = Autoencoder(input_shape ,hidden, enc_func=enc_func, dec_func=dec_func, use_BN=use_BN, init_method=init_method)
-        self.opt = optimizers.Adam()
+        # self.opt = optimizers.Adam()
+        self.opt = optimizers.MomentumSGD()
         self.opt.setup(self.model)
 
         
@@ -131,7 +183,7 @@ class AE():
         
     # 学習モード
     def train(self, train, epoch, batch, gpu_num=0, valid=None, is_plot_weight=False):
-        min_mse = 1000000
+        min_mse = np.finfo(np.float32).max # float32の最大値
 
         if gpu_num > -1:
             self.model_to(gpu_num)
@@ -308,12 +360,13 @@ class StackedAE(AE):
             inm = init_method[i] if isinstance(init_method, list) else init_method
             r  = rho[i] if isinstance(rho, list) else rho
             s_ = s[i]   if isinstance(s, list)   else s
+            ubn = use_BN[i] if isinstance(use_BN, list) else use_BN
 
-            ae = AE(hidden[i], hidden[i+1], enc_func=enc, dec_func=dec, use_BN=use_BN, init_method=inm, folder=folder, rho=r, s=s_)
+            ae = AE(hidden[i], hidden[i+1], enc_func=enc, dec_func=dec, use_BN=ubn, init_method=inm, folder=folder, rho=r, s=s_)
             self.AE_list.append(ae)
 
         self.save_dir = folder
-
+        # self.save_dir = os.path.join(folder, '{}'.format(hidden))
 
     # 各層を学習 -> 最後に全層を通して学習(is_last_train=True時). trainメソッドをそのまま継承したかったのでメソッド名を変更.
     def stacked_train(self, train, epoch, batch, gpu_num=0, valid=None, is_plot_weight=False, is_last_train=True):

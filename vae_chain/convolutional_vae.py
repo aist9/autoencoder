@@ -1,4 +1,8 @@
+# 畳み込みのVAE実装
+# Linearレイヤーのみの実装と比べて次元圧縮サイズの設定が困難なので, エンコードの出力サイズのみ指定可能にする
+
 import numpy as np
+from functools import reduce
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -9,62 +13,63 @@ import cupy as cp
 
 from net import Net, Xavier
 
-#Variational AutoEncoder model
+# train_shape は学習データtrain の train.shape を渡す想定
 class Encoder_Decoder(chainer.Chain):
-    def __init__(self, layers, act_func=F.tanh, out_func=F.sigmoid, use_BN=False, init_method='xavier', is_gauss_dist=False):
+    def __init__(self, train_shape, hidden, act_func=F.relu, out_func=F.sigmoid, use_BN=False, init_method='xavier', is_gauss_dist=False):
         super(Encoder_Decoder, self).__init__()
         self.use_BN = use_BN
         self.act_func = act_func
         self.out_func = out_func
         self.is_gauss_dist=is_gauss_dist
 
-        self.makeLayers(layers,init_method)
+        self.makeLayers( train_shape, hidden, init_method)
 
 
-    def makeLayers(self,hidden, init_method):
-        for i in range(len(hidden)-2):
-            init_func = Xavier(hidden[i], hidden[i+1]) if init_method=='xavier' else init_method()
-            l = L.Linear(hidden[i],hidden[i+1], initialW=init_func)
-            name  = 'enc{}'.format(i)
-            self.add_link(name,l)
-            if self.use_BN:
-                l = L.BatchNormalization(hidden[i+1])
-                name  = 'enc{}_BN'.format(i)
-                self.add_link(name,l)
+    def makeLayers(self, input_shape, hidden, init_method):
+        # input_shape[0]...学習データ数
+        #            [1]...チャンネル数
+        #            [2]...画像で言うと縦 (波形データならここまで)
+        #            [3]...画像で言うと横
+        input_dim = len(input_shape) - 2
+        input_channel = input_shape[1]
+        dec_shape = [input_dim, 64] + [ i//8-3 for i in input_shape[2:]]
+        # ↑ ksize2, stride2で縦横半分(切り捨て), ksize5,stride2で縦横半分(切り捨て)-2 なので, conv3の後のサイズは内包表記のリストのようになる
 
-            j = len(hidden)-i-1
-            init_func = Xavier(hidden[j], hidden[j-1]) if init_method=='xavier' else init_method()
-            l = L.Linear(hidden[j],hidden[j-1], initialW=init_func)
-            name  = 'dec{}'.format(i)
-            self.add_link(name,l)
-            if self.use_BN and j>1:
-                l = L.BatchNormalization(hidden[j-1])
-                name  = 'dec{}_BN'.format(i)
-                self.add_link(name,l)
+        init_func = Xavier() if init_method=='xavier' else init_method()
+        enc_conv1 = L.ConvolutionND(input_dim, input_channel, 32, ksize=3, initialW=init_func)
+        enc_conv2 = L.ConvolutionND(input_dim, 32, 64, ksize=3, initialW=init_func)
+        enc_conv3 = L.ConvolutionND(input_dim, 64, 64, ksize=3, initialW=init_func)
+        if self.use_BN:
+            enc_bn1 = L.BatchNormalization(32)
+            enc_bn2 = L.BatchNormalization(64)
+            enc_bn3 = L.BatchNormalization(64)
 
-        if init_method == 'xavier':
-            # μ,σを出力する層はここで定義
-            self.add_link('enc_mu' ,L.Linear(hidden[-2],hidden[-1], initialW=Xavier(hidden[-2], hidden[-1])))
-            self.add_link('enc_var',L.Linear(hidden[-2],hidden[-1], initialW=Xavier(hidden[-2], hidden[-1])))
-            # 出力層はここで定義
-            self.add_link('dec_out1' ,L.Linear(hidden[1],hidden[0],  initialW=Xavier(hidden[1] , hidden[0] )))
-            if self.is_gauss_dist:
-                self.add_link('dec_out2' ,L.Linear(hidden[1],hidden[0],  initialW=Xavier(hidden[1] , hidden[0] )))
-        else:
-            self.add_link('enc_mu'  ,L.Linear(hidden[-2],hidden[-1], initialW=init_method() ))
-            self.add_link('enc_var' ,L.Linear(hidden[-2],hidden[-1], initialW=init_method() ))
-            self.add_link('dec_out1',L.Linear(hidden[1], hidden[0],  initialW=init_method() ))
-            if self.is_gauss_dist:
-                self.add_link('dec_out2' ,L.Linear(hidden[1],hidden[0],  initialW=init_method() ))
+        enc_lin = L.Linear(None, hidden[0])
+        enc_mu  = L.Linear(hidden[0], hidden[1], initialW=init_func)
+        enc_var = L.Linear(hidden[0], hidden[1], initialW=init_func)
 
-        
+
+        dec_lin1 = L.Linear(hidden[1], hidden[0], initialW=init_func)
+        dec_lin2 = L.Linear(hidden[0], reduce(lambda a,b:a*b, dec_shape), initialW=init_func)
+        dec_conv1 = L.DeconvolutionND(input_dim, 64, 64, ksize=3, initialW=init_func)
+        dec_conv2 = L.DeconvolutionND(input_dim, 64, 32, ksize=3, initialW=init_func)
+        dec_conv3 = L.DeconvolutionND(input_dim, 32, input_channel, ksize=3, initialW=init_func)
+        if self.use_BN:
+            dec_bn1 = L.BatchNormalization(64)
+            dec_bn2 = L.BatchNormalization(32)
+
+        dec_out1 = L.DeconvolutionND(input_dim, input_channel, input_channel, ksize=1, stride=1, initialW=init_func)
+        if self.is_gauss_dist:
+            dec_out2 = L.DeconvolutionND(input_dim, input_channel, input_channel, ksize=1, stride=1, initialW=init_func)
+
+
     def __call__(self, x):
         mu,var = self.encode(x)
         e = F.gaussian(mu, var)
         d_out = self.decode(e)
         return e,d_out
 
-    def encode(self, x):        
+    def encode(self, x):
         e = x
         for layer in self.children():
             if 'enc' in layer.name:
@@ -87,8 +92,6 @@ class Encoder_Decoder(chainer.Chain):
                     break
                 d = layer(d)
                 d = self.act_func(d) if ('BN' in layer.name or not self.use_BN) else d
-                #if 'BN' in layer.name:
-                #    d = F.dropout(d, ratio=0.3)
 
         out = ( self.out_func(self.dec_out1(d)), self.out_func(self.dec_out2(d)) ) if self.is_gauss_dist else self.dec_out1(d)
         # out = ( self.dec_out1(d), self.out_func(self.dec_out2(d)) ) if self.is_gauss_dist else self.dec_out1(d)
@@ -120,15 +123,14 @@ class VAE(Net):
         self.model = Encoder_Decoder(hidden, act_func=act_func, out_func=out_func, use_BN=use_BN, init_method=init_method, is_gauss_dist=is_gauss_dist)
 
     def set_optimizer(self, learning_rate=0.001, gradient_momentum=0.9, weight_decay=None, gradient_clipping=None):
-        # self.opt = optimizers.Adam(alpha=learning_rate, beta1=gradient_momentum)
+        self.opt = optimizers.Adam(alpha=learning_rate, beta1=gradient_momentum)
         # self.opt = optimizers.Adam()
-        self.opt = optimizers.MomentumSGD()
         self.opt.setup(self.model)
 
         if gradient_clipping is not None:
             self.opt.add_hook(chainer.optimizer.GradientClipping(gradient_clipping))
         if weight_decay is not None:
-            self.opt.add_hook(chainer.optimizer.WeightDecay(weight_decay))
+            self.opt.add_hook(chainer.optimizer.WeightDecay(0.001))
 
     def model_to(self, gpu_num):
         if gpu_num == -1:

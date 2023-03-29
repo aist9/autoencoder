@@ -48,13 +48,13 @@ class Net():
             if act_func in activations.keys():
                 act_func = activations[act_func]
             else:
-                print('arg act_func is ', act_func, '. This value is not exist. This model uses identity function as activation function.')
+                print('arg act_func is ', act_func, '. This value cannot be selected. This model uses identity function as activation function.')
                 act_func = lambda x:x
         if isinstance(out_func, str): # 文字列で指定されたとき関数に変換
             if out_func in activations.keys():
                 out_func = activations[out_func]
             else:
-                print('arg out_func is ', out_func, '. This value is not exist. This model uses identity function as activation function of output layer.')
+                print('arg out_func is ', out_func, '. This value cannot be selected. This model uses identity function as activation function.')
                 out_func = lambda x:x
         if out_func != F.sigmoid:
             print('out_func should be sigmoid')
@@ -116,51 +116,59 @@ class Net():
         for ep in range(epoch):
             Loss = Reconst = Latent = 0
             perm = np.random.permutation(nlen)
-            for p in range(0,nlen,batch):
-                # encode
-                encoder_input = cuda.to_gpu(data[perm[p:p+batch]], device=gpu_num) if gpu_num>-1 else data[perm[p:p+batch]].copy()
-                encoder_input = Variable( encoder_input )
-                btc = float(encoder_input.shape[0])
-                mu, ln_var = self.encode(encoder_input)
-                latent_loss = C * self.calc_latent_loss(mu, ln_var) / btc
-                # decode
-                reconst_loss = 0
-                for l in range(k):
-                    decoder_input  = F.gaussian(mu, ln_var)
-                    decoder_output = self.decode(decoder_input)
-                    reconst_loss  += self.calc_reconst_loss(encoder_input, decoder_output) / (k*btc)
-                loss = latent_loss + reconst_loss
-                # back prop
-                self.cleargrads()
-                loss.backward()
-                self.update()
-                # using for print loss
-                Loss    += loss
-                Reconst += reconst_loss
-                Latent  += latent_loss
-            Loss = float(Loss.data) / itr
-            loss_list.append( Loss )
+            try:
+                for p in range(0,nlen,batch):
+                    # encode
+                    encoder_input = cuda.to_gpu(data[perm[p:p+batch]], device=gpu_num) if gpu_num>-1 else data[perm[p:p+batch]].copy()
+                    encoder_input = Variable( encoder_input )
+                    btc = float(encoder_input.shape[0])
+                    mu, ln_var = self.encode(encoder_input)
+                    latent_loss = C * self.calc_latent_loss(mu, ln_var)# / btc
+                    # decode
+                    reconst_loss = 0
+                    for l in range(k):
+                        decoder_input  = F.gaussian(mu, ln_var)
+                        decoder_output = self.decode(decoder_input)
+                        reconst_loss  += self.calc_reconst_loss(encoder_input, decoder_output) / (k)#*btc)
+                    loss = latent_loss + reconst_loss
+                    # back prop
+                    self.cleargrads()
+                    loss.backward()
+                    self.update()
+                    # using for print loss
+                    Loss    += loss
+                    Reconst += reconst_loss
+                    Latent  += latent_loss
+                Loss = float(Loss.data) / itr
+                loss_list.append( Loss )
 
-            # show training progress
-            if (ep + 1) % 10 == 0 or ep == 0:
-                Reconst = float( Reconst.data ) / itr
-                Latent  = float(  Latent.data ) / itr
-                perm = np.random.permutation(data.shape[0])[:batch]
-                mse = self.MSE(cp.array(data[perm])).mean()
-                pr = '{}\t{:.6f}\t{:.6f}\t{:.6f}\t{:.6f}'.format(ep+1, Loss, Latent, Reconst, float(mse))
-                if valid is not None:
-                    vld = self.MSE(cp.array(valid)).mean()
-                    pr += '\t{:.6f}'.format(float(vld))
-                print(pr)
+                # show training progress
+                if (ep + 1) % 10 == 0 or ep == 0:
+                    Reconst = float( Reconst.data ) / itr
+                    Latent  = float(  Latent.data ) / itr
+                    perm = np.random.permutation(data.shape[0])[:batch]
+                    mse = self.MSE(cp.array(data[perm])).mean()
+                    pr = '{}\t{:.6f}\t{:.6f}\t{:.6f}\t{:.6f}'.format(ep+1, Loss, Latent, Reconst, float(mse))
+                    if valid is not None:
+                        vld = self.MSE(cp.array(valid)).mean()
+                        pr += '\t{:.6f}'.format(float(vld))
+                    print(pr)
 
-                # check layer weight per 10 epoch.
-                if is_plot_weight:
-                    self.plot_weight(ep)
-                # save best validation model
-                if (valid is not None) and min_mse > mse:
-                    os.makedirs(self.save_dir+'/best_valid', exist_ok=True)
-                    self.save_model(path = self.save_dir+'/best_valid')
-                    min_mse = mse
+                    # check layer weight per 10 epoch.
+                    if is_plot_weight:
+                        self.plot_weight(ep)
+                        # self.plot_latent( cp.array(data[perm]), ep )
+                    # save best validation model
+                    if (valid is not None) and min_mse > mse:
+                        os.makedirs(self.save_dir+'/best_valid', exist_ok=True)
+                        self.save_model(path = self.save_dir+'/best_valid')
+                        min_mse = mse
+            except:
+                os.makedirs(self.save_dir+'/error_save', exist_ok=True)
+                self.save_model(path = self.save_dir+'/error_save')
+                print('any error stop program')
+                exit()
+
 
         self.model_to(-1)
 
@@ -178,7 +186,7 @@ class Net():
         raise Exception()
 
     def calc_latent_loss(self, mu, ln_var):
-        return F.gaussian_kl_divergence(mu, ln_var)
+        return F.gaussian_kl_divergence(mu, ln_var) / mu.size
 
     def calc_reconst_loss(self, encoder_input, decoder_output):
         if self.is_gauss_dist:
@@ -189,7 +197,7 @@ class Net():
             reconst = F.sum(m_vae + a_vae)
         else:
             reconst = F.bernoulli_nll(encoder_input, decoder_output)
-        return reconst
+        return reconst / decoder_output.size
 
     def cleargrads(self):
         raise Exception()
@@ -211,6 +219,15 @@ class Net():
     # 各レイヤーの重みをプロット. 重み更新が機能してるか確認.
     def plot_weight(self, epoch):
         raise Exception()
+
+    def plot_latent(self, data, epoch):
+        m,v = self.encode(data)
+        plot = F.gaussian(m, v)
+        plot = cp.asnumpy(plot.data)
+        plt.scatter( plot[:,0], plot[:,1] )
+        plt.savefig(self.save_dir + '/weight_plot/latent_{}.png'.format(epoch+1))
+        plt.clf()
+        plt.close()
 
     # modelの保存. trainメソッドの最後に呼び出される. ついでにエラーカーブも保存.
     def save_model(self, path=None, train_loss=None):
@@ -235,12 +252,21 @@ class Net():
             rec = d_out[0].data
             if unregular: # 非正則化項のやつ
                 d_mu, d_var = d_out
-                D_VAE = F.gaussian_kl_divergence(e_mu, e_var)
-                A_VAE = 0.5* ( np.log(2*np.pi) + d_var )
+                # D_VAE = F.gaussian_kl_divergence(e_mu, e_var)
+                # A_VAE = 0.5* ( np.log(2*np.pi) + d_var )
                 M_VAE = 0.5* ( data-d_mu )**2 * F.exp(-d_var)
                 return feat, rec, M_VAE.data
         else:
+            # bernoulli_nll内でかけられるsigmoidに帳尻を合わす
             rec = F.sigmoid(d_out).data
+            if unregular:
+                # bernoulli verでの非正則化項はおそらくこうなる. 間違っているかも.
+                p = rec
+                v = p*(1-p) # ベルヌーイ分布の分散の式
+                M_VAE = 0.5* ( data-p )**2 / v
+                return feat, rec, M_VAE
+            
+
         mse = np.mean( (rec-data)**2, axis=1 )
 
         # lat_loss = F.gaussian_kl_divergence(e_mu, e_var)
